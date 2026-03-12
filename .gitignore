@@ -23,3 +23,5 @@ yarn-error.log*
 /DomesticViolenceRecords/Code.gs
 /FamilyServiceRecords/.clasp.json
 /DomesticViolenceRecords/.clasp.json
+/DomesticViolenceRecords/test.gs
+/DomesticViolenceRecords/convert_data.py
