@@ -4516,19 +4516,29 @@
         const previewPanel = document.getElementById('parentingPreviewPanel');
         const filterSection = document.getElementById('parentingFilterSection');
         const statCols = document.querySelectorAll('.exec-stats-col');
+        const container = document.getElementById('parentingTopicsContainer');
+        if (!tableWrapper || !previewPanel || !container) return;
         
         if (enabled) {
-            tableWrapper.style.width = 'calc(100% - 950px)';
-            tableWrapper.style.flex = 'none';
             previewPanel.style.display = 'flex';
             previewPanel.style.flexDirection = 'column';
+            tableWrapper.style.width = '';
+            tableWrapper.style.flex = '';
+            previewPanel.style.width = '';
+            previewPanel.style.minWidth = '';
+            previewPanel.style.maxWidth = '';
+            container.classList.toggle('parenting-detail-open', window.innerWidth > 1280);
             
             // 隱藏詳細統計欄位與上方篩選區，讓畫面更緊湊
             statCols.forEach(el => el.style.display = 'none');
             if (filterSection) filterSection.style.display = 'none';
         } else {
-            tableWrapper.style.width = '100%';
-            tableWrapper.style.flex = '1';
+            container.classList.remove('parenting-detail-open');
+            tableWrapper.style.width = '';
+            tableWrapper.style.flex = '';
+            previewPanel.style.width = '';
+            previewPanel.style.minWidth = '';
+            previewPanel.style.maxWidth = '';
             previewPanel.style.display = 'none';
             
             // 恢復所有隱藏部分
@@ -4543,6 +4553,12 @@
             });
         }
     }
+
+    window.addEventListener('resize', function () {
+        const previewPanel = document.getElementById('parentingPreviewPanel');
+        if (!previewPanel || previewPanel.style.display === 'none') return;
+        toggleParentingFocusMode(true);
+    });
 
     // ==================== 場次連接線系統 ====================
 
@@ -5226,6 +5242,9 @@
             <textarea id="batchPasteArea" rows="10" 
               style="width: 100%; font-family: monospace; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; padding: 8px; resize: vertical;" 
               placeholder="在此貼上資料..."></textarea>
+            <div id="batchCursorHint" style="margin-top: 8px; font-size: 0.8rem; color: #666; line-height: 1.35;">
+              目前：第 1 筆（第 1 行）｜欄位：Q1（第 1 欄）｜本行 0/5 欄
+            </div>
             <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end;">
               <button id="batchCancelBtn" style="padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer;">取消</button>
               <button id="batchConfirmBtn" style="padding: 6px 14px; border: none; border-radius: 4px; background: #3498db; color: #fff; cursor: pointer; font-weight: bold;">匯入</button>
@@ -5234,8 +5253,72 @@
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
+        const batchArea = document.getElementById('batchPasteArea');
+        const batchCursorHint = document.getElementById('batchCursorHint');
+        const BATCH_COL_NAMES = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'];
+
+        const calcBatchCursorInfo = () => {
+            const text = batchArea.value || '';
+            const caretPos = batchArea.selectionStart || 0;
+            const before = text.slice(0, caretPos);
+            const lineIdx = before.split('\n').length - 1;
+            const lines = text.split('\n');
+            const lineText = lines[lineIdx] || '';
+            const lineStart = before.lastIndexOf('\n') + 1;
+            const caretInLine = Math.max(0, caretPos - lineStart);
+            const leftText = lineText.slice(0, caretInLine);
+
+            let currentCol = 1;
+            const trimmedLeft = leftText.trim();
+            if (trimmedLeft) {
+                const tokenCount = trimmedLeft.split(/\s+/).filter(Boolean).length;
+                currentCol = /\s$/.test(leftText) ? tokenCount + 1 : tokenCount;
+            }
+
+            const rowColCount = lineText.trim() ? lineText.trim().split(/\s+/).filter(Boolean).length : 0;
+            return {
+                row: lineIdx + 1,
+                currentCol: Math.max(1, currentCol),
+                rowColCount
+            };
+        };
+
+        const updateBatchCursorHint = () => {
+            if (!batchArea || !batchCursorHint) return;
+            const info = calcBatchCursorInfo();
+            const colIndex = info.currentCol;
+            const colName = BATCH_COL_NAMES[colIndex - 1] || `第${colIndex}欄（超出）`;
+            const nonEmptyRows = batchArea.value.split('\n').filter(l => l.trim() !== '').length;
+            const rowColor = '#2563eb';
+            const colColor = colIndex > 5 ? '#dc2626' : '#7c3aed';
+            const countColor = info.rowColCount > 5
+                ? '#dc2626'
+                : (info.rowColCount === 5 ? '#15803d' : '#d97706');
+            const pastedColor = '#0f766e';
+            batchCursorHint.innerHTML = `
+                <span style="color:#666;">目前：</span>
+                <span style="color:${rowColor}; font-weight:600;">第 ${info.row} 筆（第 ${info.row} 行）</span>
+                <span style="color:#9ca3af;">｜</span>
+                <span style="color:#666;">欄位：</span>
+                <span style="color:${colColor}; font-weight:600;">${colName}（第 ${colIndex} 欄）</span>
+                <span style="color:#9ca3af;">｜</span>
+                <span style="color:#666;">本行</span>
+                <span style="color:${countColor}; font-weight:600;"> ${info.rowColCount}/5 欄</span>
+                <span style="color:#9ca3af;">｜</span>
+                <span style="color:#666;">已貼上</span>
+                <span style="color:${pastedColor}; font-weight:600;"> ${nonEmptyRows} 筆</span>
+            `;
+        };
+
+        ['input', 'click', 'keyup', 'select'].forEach(evt => {
+            batchArea.addEventListener(evt, updateBatchCursorHint);
+        });
+
         // 自動 focus 到 textarea
-        setTimeout(() => document.getElementById('batchPasteArea').focus(), 100);
+        setTimeout(() => {
+            batchArea.focus();
+            updateBatchCursorHint();
+        }, 100);
 
         // 取消
         document.getElementById('batchCancelBtn').onclick = () => overlay.remove();
@@ -5370,6 +5453,13 @@
         { key: '兒少團體', shortLabel: '兒少', fullLabel: '願讓子女參加兒少心理調適團體' }
     ];
     const POST_SURVEY_SOCIAL_COUNT_KEY = '轉介_社工諮詢';
+    const POST_SURVEY_CHILD_MANUAL_KEY = '讓子女參加心理團體';
+
+    function syncChildManualInputs(value) {
+        const displayInput = document.getElementById('surveyDisplayChildManualInput');
+        if (!displayInput) return;
+        displayInput.value = (value === '' || value == null) ? '' : String(value);
+    }
 
     function loadParentingPostSurveyForPanel(index) {
         const item = currentParentingTopicsData[index];
@@ -5397,6 +5487,13 @@
                     return;
                 }
                 const responses = res.data || [];
+                if (responses.length > 0) {
+                    const raw = responses[0][POST_SURVEY_CHILD_MANUAL_KEY];
+                    const num = parseInt(raw, 10);
+                    syncChildManualInputs((!isNaN(num) && num > 0) ? num : '');
+                } else {
+                    syncChildManualInputs('');
+                }
                 responses.forEach(r => {
                     addPostSurveyRespondentRow(r);
                 });
@@ -5446,35 +5543,83 @@
             tr.appendChild(td);
         }
 
-        // 進一步服務(複選)
+        // 進一步服務(複選)：列內只顯示摘要，點編輯才打開面板，避免撐高整列。
         const tdSvc = document.createElement('td');
-        tdSvc.style.cssText = 'border: 1px solid #ddd; padding: 4px; font-size: 0.75rem;';
+        tdSvc.className = 'post-survey-svc-cell';
+        tdSvc.style.cssText = 'border: 1px solid #ddd; padding: 2px 3px; font-size: 0.68rem; vertical-align: top; position: relative;';
+
+        const svcSummary = document.createElement('div');
+        svcSummary.className = 'post-survey-svc-summary';
+        svcSummary.style.cssText = 'font-size: 0.64rem; color: #555; line-height: 1.2; min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+
+        const svcEditBtn = document.createElement('button');
+        svcEditBtn.type = 'button';
+        svcEditBtn.textContent = '編輯';
+        svcEditBtn.style.cssText = 'margin-top: 2px; padding: 1px 6px; border: 1px solid #ccc; border-radius: 3px; background: #fff; cursor: pointer; font-size: 0.64rem;';
+
+        const svcPanel = document.createElement('div');
+        svcPanel.className = 'post-survey-svc-panel';
+        svcPanel.style.cssText = 'display: none; position: absolute; right: 2px; top: 2px; z-index: 60; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.15); padding: 5px; min-width: 130px;';
+
+        const panelHead = document.createElement('div');
+        panelHead.style.cssText = 'display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 3px;';
+        const panelTitle = document.createElement('span');
+        panelTitle.textContent = '進一步服務';
+        panelTitle.style.cssText = 'font-size: 0.64rem; color: #666; font-weight: 600;';
+        const panelClose = document.createElement('button');
+        panelClose.type = 'button';
+        panelClose.textContent = '×';
+        panelClose.style.cssText = 'border: none; background: transparent; cursor: pointer; font-size: 0.8rem; line-height: 1; padding: 0;';
+        panelClose.onclick = (e) => {
+            e.stopPropagation();
+            svcPanel.style.display = 'none';
+        };
+        panelHead.appendChild(panelTitle);
+        panelHead.appendChild(panelClose);
+        svcPanel.appendChild(panelHead);
+
         const svcContainer = document.createElement('div');
-        svcContainer.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        svcContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px;';
 
         const mainRow = document.createElement('div');
-        mainRow.style.cssText = 'display: flex; gap: 4px; flex-wrap: wrap; align-items: center;';
+        mainRow.style.cssText = 'display: flex; gap: 2px 4px; flex-wrap: wrap; align-items: center; line-height: 1.05;';
+
+        function updateServiceSummary() {
+            const selected = [];
+            mainRow.querySelectorAll('.post-survey-svc-chk').forEach(chk => {
+                if (chk.checked) selected.push(chk.dataset.shortLabel || chk.dataset.key);
+            });
+            const socialRaw = socialCountInput.value.trim();
+            const socialText = socialRaw ? ('社工' + socialRaw) : '';
+            const left = selected.length ? selected.join('、') : '未選';
+            svcSummary.textContent = socialText ? (left + ' / ' + socialText) : left;
+        }
         
         POST_SURVEY_SERVICE_OPTIONS.forEach(option => {
             const lbl = document.createElement('label');
-            lbl.style.cssText = 'display: flex; align-items: center; gap: 2px; cursor: pointer;';
+            lbl.style.cssText = 'display: flex; align-items: center; gap: 1px; cursor: pointer; margin: 0; padding: 0; line-height: 1;';
             lbl.title = option.fullLabel;
             const chk = document.createElement('input');
             chk.type = 'checkbox';
             chk.className = 'post-survey-svc-chk';
             chk.dataset.key = option.key;
+            chk.dataset.shortLabel = option.shortLabel;
+            chk.style.cssText = 'margin: 0; width: 13px; height: 13px;';
             chk.checked = (data && data['轉介_' + option.key]) ? true : false;
-            chk.onchange = () => { parentingPostSurveyIsDirty = true; };
+            chk.onchange = () => {
+                parentingPostSurveyIsDirty = true;
+                updateServiceSummary();
+            };
             lbl.appendChild(chk);
             lbl.appendChild(document.createTextNode(option.shortLabel));
             mainRow.appendChild(lbl);
         });
         
         const socialRow = document.createElement('div');
-        socialRow.style.cssText = 'display: flex; align-items: center; gap: 4px; border-top: 1px dashed #ddd; padding-top: 3px;';
+        socialRow.style.cssText = 'display: flex; align-items: center; gap: 3px; border-top: 1px dashed #ddd; padding-top: 2px; margin-top: 1px; line-height: 1.05;';
         const socialLabel = document.createElement('span');
         socialLabel.textContent = '社工圈選數';
-        socialLabel.style.cssText = 'color: #666; font-size: 0.72rem;';
+        socialLabel.style.cssText = 'color: #666; font-size: 0.62rem;';
         const socialCountInput = document.createElement('input');
         socialCountInput.type = 'number';
         socialCountInput.className = 'post-survey-social-count';
@@ -5485,11 +5630,12 @@
         socialCountInput.value = (data && data[POST_SURVEY_SOCIAL_COUNT_KEY] !== '' && data[POST_SURVEY_SOCIAL_COUNT_KEY] != null)
             ? data[POST_SURVEY_SOCIAL_COUNT_KEY]
             : '';
-        socialCountInput.style.cssText = 'width: 52px; text-align: center; border: 1px solid #ccc; border-radius: 3px; padding: 2px; font-size: 0.8rem;';
+        socialCountInput.style.cssText = 'width: 40px; text-align: center; border: 1px solid #ccc; border-radius: 3px; padding: 1px 2px; font-size: 0.64rem; line-height: 1;';
         socialCountInput.oninput = () => {
             const raw = socialCountInput.value.trim();
             if (raw === '') {
                 parentingPostSurveyIsDirty = true;
+                updateServiceSummary();
                 return;
             }
             const num = parseInt(raw, 10);
@@ -5502,14 +5648,39 @@
                 socialCountInput.style.borderColor = '#ccc';
             }
             parentingPostSurveyIsDirty = true;
+            updateServiceSummary();
         };
         socialRow.appendChild(socialLabel);
         socialRow.appendChild(socialCountInput);
 
         svcContainer.appendChild(mainRow);
         svcContainer.appendChild(socialRow);
-        tdSvc.appendChild(svcContainer);
+        svcPanel.appendChild(svcContainer);
+
+        tdSvc.appendChild(svcSummary);
+        tdSvc.appendChild(svcEditBtn);
+        tdSvc.appendChild(svcPanel);
         tr.appendChild(tdSvc);
+
+        svcEditBtn.onclick = (e) => {
+            e.stopPropagation();
+            const open = svcPanel.style.display === 'block';
+            document.querySelectorAll('.post-survey-svc-panel').forEach(panel => {
+                panel.style.display = 'none';
+            });
+            svcPanel.style.display = open ? 'none' : 'block';
+        };
+        tdSvc.onclick = (e) => e.stopPropagation();
+        updateServiceSummary();
+
+        if (!window._postSurveySvcPanelHooked) {
+            document.addEventListener('click', () => {
+                document.querySelectorAll('.post-survey-svc-panel').forEach(panel => {
+                    panel.style.display = 'none';
+                });
+            });
+            window._postSurveySvcPanelHooked = true;
+        }
 
         // 刪除按鈕
         const tdDel = document.createElement('td');
@@ -5563,6 +5734,9 @@
             <textarea id="postBatchPasteArea" rows="10" 
               style="width: 100%; font-family: monospace; font-size: 0.9rem; border: 1px solid #ccc; border-radius: 4px; padding: 8px; resize: vertical;" 
               placeholder="在此貼上資料..."></textarea>
+            <div id="postBatchCursorHint" style="margin-top: 8px; font-size: 0.8rem; color: #666; line-height: 1.35;">
+              目前：第 1 筆（第 1 行）｜欄位：Q1（第 1 欄）｜本行 0/12 欄
+            </div>
             <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: flex-end;">
               <button id="postBatchCancelBtn" style="padding: 6px 14px; border: 1px solid #ccc; border-radius: 4px; background: #fff; cursor: pointer;">取消</button>
               <button id="postBatchConfirmBtn" style="padding: 6px 14px; border: none; border-radius: 4px; background: #3498db; color: #fff; cursor: pointer; font-weight: bold;">匯入</button>
@@ -5571,7 +5745,74 @@
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
-        setTimeout(() => document.getElementById('postBatchPasteArea').focus(), 100);
+        const postBatchArea = document.getElementById('postBatchPasteArea');
+        const postBatchCursorHint = document.getElementById('postBatchCursorHint');
+        const POST_BATCH_COL_NAMES = [
+            'Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6', 'Q7',
+            '社工圈選數', '婚姻諮商', '個人心理諮商', '家事商談', '兒少心理團體'
+        ];
+
+        const calcBatchCursorInfo = () => {
+            const text = postBatchArea.value || '';
+            const caretPos = postBatchArea.selectionStart || 0;
+            const before = text.slice(0, caretPos);
+            const lineIdx = before.split('\n').length - 1;
+            const lines = text.split('\n');
+            const lineText = lines[lineIdx] || '';
+            const lineStart = before.lastIndexOf('\n') + 1;
+            const caretInLine = Math.max(0, caretPos - lineStart);
+            const leftText = lineText.slice(0, caretInLine);
+
+            let currentCol = 1;
+            const trimmedLeft = leftText.trim();
+            if (trimmedLeft) {
+                const tokenCount = trimmedLeft.split(/\s+/).filter(Boolean).length;
+                currentCol = /\s$/.test(leftText) ? tokenCount + 1 : tokenCount;
+            }
+
+            const rowColCount = lineText.trim() ? lineText.trim().split(/\s+/).filter(Boolean).length : 0;
+            return {
+                row: lineIdx + 1,
+                currentCol: Math.max(1, currentCol),
+                rowColCount
+            };
+        };
+
+        const updateBatchCursorHint = () => {
+            if (!postBatchArea || !postBatchCursorHint) return;
+            const info = calcBatchCursorInfo();
+            const colIndex = info.currentCol;
+            const colName = POST_BATCH_COL_NAMES[colIndex - 1] || `第${colIndex}欄（超出）`;
+            const nonEmptyRows = postBatchArea.value.split('\n').filter(l => l.trim() !== '').length;
+            const rowColor = '#2563eb';
+            const colColor = colIndex > 12 ? '#dc2626' : '#7c3aed';
+            const countColor = info.rowColCount > 12
+                ? '#dc2626'
+                : (info.rowColCount === 12 ? '#15803d' : '#d97706');
+            const pastedColor = '#0f766e';
+            postBatchCursorHint.innerHTML = `
+                <span style="color:#666;">目前：</span>
+                <span style="color:${rowColor}; font-weight:600;">第 ${info.row} 筆（第 ${info.row} 行）</span>
+                <span style="color:#9ca3af;">｜</span>
+                <span style="color:#666;">欄位：</span>
+                <span style="color:${colColor}; font-weight:600;">${colName}（第 ${colIndex} 欄）</span>
+                <span style="color:#9ca3af;">｜</span>
+                <span style="color:#666;">本行</span>
+                <span style="color:${countColor}; font-weight:600;"> ${info.rowColCount}/12 欄</span>
+                <span style="color:#9ca3af;">｜</span>
+                <span style="color:#666;">已貼上</span>
+                <span style="color:${pastedColor}; font-weight:600;"> ${nonEmptyRows} 筆</span>
+            `;
+        };
+
+        ['input', 'click', 'keyup', 'select'].forEach(evt => {
+            postBatchArea.addEventListener(evt, updateBatchCursorHint);
+        });
+
+        setTimeout(() => {
+            postBatchArea.focus();
+            updateBatchCursorHint();
+        }, 100);
 
         document.getElementById('postBatchCancelBtn').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
@@ -5688,6 +5929,12 @@
             if (socialCount > 5) socialCount = 5;
             resp[POST_SURVEY_SOCIAL_COUNT_KEY] = socialCount > 0 ? socialCount : '';
 
+            const displayChildManualInput = document.getElementById('surveyDisplayChildManualInput');
+            let childManual = parseInt(displayChildManualInput ? displayChildManualInput.value : '', 10);
+            if (isNaN(childManual) || childManual < 0) childManual = 0;
+            if (childManual > 999) childManual = 999;
+            resp[POST_SURVEY_CHILD_MANUAL_KEY] = childManual > 0 ? childManual : '';
+
             responses.push(resp);
         });
 
@@ -5790,6 +6037,39 @@
         const svcKeys = ['婚姻諮商', '個人心理', '家事商談', '兒少團體', '社工諮詢'];
         svcKeys.forEach((key, i) => {
             if (!cells[i]) return;
+            if (key === '兒少團體') {
+                let input = cells[i].querySelector('#surveyDisplayChildManualInput');
+                const v = (services && services[key]) ? services[key] : 0;
+                if (!input) {
+                    cells[i].innerHTML = '';
+                    input = document.createElement('input');
+                    input.id = 'surveyDisplayChildManualInput';
+                    input.type = 'number';
+                    input.min = '0';
+                    input.max = '999';
+                    input.style.cssText = 'width:72px; padding:4px 6px; border:1px solid #ccc; border-radius:6px; text-align:center; font-size:0.92rem; font-weight:700;';
+                    cells[i].appendChild(input);
+                }
+                input.value = v > 0 ? v : '';
+                input.oninput = () => {
+                    const raw = input.value.trim();
+                    if (raw === '') {
+                        parentingPostSurveyIsDirty = true;
+                        return;
+                    }
+                    const num = parseInt(raw, 10);
+                    if (isNaN(num) || num < 0 || num > 999) {
+                        input.value = '';
+                        input.style.borderColor = '#e74c3c';
+                        setTimeout(() => { input.style.borderColor = '#ccc'; }, 600);
+                    } else {
+                        input.value = String(num);
+                        input.style.borderColor = '#ccc';
+                    }
+                    parentingPostSurveyIsDirty = true;
+                };
+                return;
+            }
             cells[i].textContent = (services && services[key]) ? services[key] : 0;
         });
     }

@@ -476,7 +476,7 @@ function getParentingPostSurveyHeadersForService_() {
     'RecordId', '年度', '月份', '填答序號'
   ]
   .concat(PARENTING_POST_SURVEY_QUESTION_HEADERS)
-  .concat(['轉介_社工諮詢', '轉介_婚姻諮商', '轉介_個人心理', '轉介_家事商談', '轉介_兒少團體'])
+  .concat(['轉介_社工諮詢', '轉介_婚姻諮商', '轉介_個人心理', '轉介_家事商談', '轉介_兒少團體', '讓子女參加心理團體'])
   .concat(['建立時間', '修改時間', '建立者', '修改者']);
 }
 
@@ -611,6 +611,14 @@ function saveParentingPostSurvey(payload) {
           return { status: 'error', message: `第 ${i + 1} 列社工圈選數必須為 0~5` };
         }
       }
+
+      const rawChildManual = resp['讓子女參加心理團體'];
+      if (!(rawChildManual === '' || rawChildManual == null)) {
+        const childManualCount = parseInt(rawChildManual, 10);
+        if (isNaN(childManualCount) || childManualCount < 0 || childManualCount > 999) {
+          return { status: 'error', message: `讓子女參加心理團體必須為 0~999` };
+        }
+      }
     }
     
     const hMap = {};
@@ -638,6 +646,11 @@ function saveParentingPostSurvey(payload) {
       setCol('轉介_個人心理', resp['轉介_個人心理'] || '');
       setCol('轉介_家事商談', resp['轉介_家事商談'] || '');
       setCol('轉介_兒少團體', resp['轉介_兒少團體'] || '');
+      const childManualRaw = resp['讓子女參加心理團體'];
+      const childManualCount = (childManualRaw === '' || childManualRaw == null)
+        ? ''
+        : parseInt(childManualRaw, 10);
+      setCol('讓子女參加心理團體', childManualCount);
 
       const socialCountRaw = resp['轉介_社工諮詢'];
       const socialCount = (socialCountRaw === '' || socialCountRaw == null)
@@ -688,15 +701,25 @@ function getParentingSurveyStats(recordId) {
       const postResponses = postResult.data || [];
       postResponses.forEach(r => {
         if (parseInt(r['轉介_婚姻諮商'], 10) > 0) services['婚姻諮商']++;
-        if (parseInt(r['轉介_個人心理'], 10) > 0) services['個人心理']++;
+        // 需求：轉介個人心理 = 個人心理勾選 + 兒少團體勾選
+        let personalCount = 0;
+        if (parseInt(r['轉介_個人心理'], 10) > 0) personalCount += 1;
+        if (parseInt(r['轉介_兒少團體'], 10) > 0) personalCount += 1;
+        services['個人心理'] += personalCount;
         if (parseInt(r['轉介_家事商談'], 10) > 0) services['家事商談']++;
-        if (parseInt(r['轉介_兒少團體'], 10) > 0) services['兒少團體']++;
         let socialCount = parseInt(r['轉介_社工諮詢'], 10);
         if (!isNaN(socialCount) && socialCount > 0) {
           if (socialCount > 5) socialCount = 5;
           services['社工諮詢'] += socialCount;
         }
       });
+      // 讓子女參加心理團體統計：採手寫欄位（每月同值，取第一個有效值）
+      const manualChildStat = postResponses.reduce((acc, r) => {
+        if (acc > 0) return acc;
+        const n = parseInt(r['讓子女參加心理團體'], 10);
+        return (!isNaN(n) && n > 0) ? n : 0;
+      }, 0);
+      services['兒少團體'] = manualChildStat;
     }
 
     if (total === 0) {

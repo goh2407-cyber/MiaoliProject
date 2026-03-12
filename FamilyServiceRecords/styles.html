@@ -1004,12 +1004,8 @@
         max-width: 75%;
     }
 
-    /* 只放大右側「快速編輯」面板 */
+    /* 右側親職面板的寬度由 JS 動態控制，這裡只保留文字樣式 */
     #parentingPreviewPanel {
-        flex: 0 0 950px;
-        max-width: 60%;
-        min-width: 600px;
-        width: 950px !important;
         font-size: 0.95rem;
     }
 
@@ -2501,6 +2497,400 @@
         to {
             transform: scaleY(1);
             opacity: 1;
+        }
+    }
+
+    /* ==================== 親職執行概況版面優化 ==================== */
+    #sub-view-parenting {
+        padding-top: 6px;
+        --parenting-left-height: calc(100vh - 190px);
+        --parenting-right-height: calc(100vh - 165px);
+    }
+
+    #sub-view-parenting #parentingFilterSection {
+        background: linear-gradient(180deg, #fffdf9 0%, #fff 100%);
+        border: 1px solid #efe7d8;
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);
+    }
+
+    #sub-view-parenting #parentingTopicsContainer {
+        gap: 12px !important;
+        padding-top: 6px !important;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open {
+        display: grid !important;
+        grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+        gap: 16px !important;
+        align-items: start !important;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper {
+        width: auto !important;
+        min-width: 0;
+    }
+
+    #sub-view-parenting #parentingTopicsTableWrapper .records-table-container {
+        border: 1px solid #ece7de;
+        border-radius: 12px;
+        overflow: auto;
+        height: var(--parenting-left-height);
+        max-height: var(--parenting-left-height);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+    }
+
+    #sub-view-parenting #parentingPreviewPanel {
+        border: 1px solid #e7ddcb;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 10px 30px rgba(52, 36, 16, 0.10);
+        height: var(--parenting-right-height);
+        max-height: var(--parenting-right-height);
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+        zoom: 1 !important;
+        display: flex;
+        flex-direction: column;
+        position: sticky;
+        top: 6px;
+        align-self: start;
+        font-size: 0.78rem;
+    }
+
+    /* 避免被全域 Serif h2/h3 放大，導致右側面板又變大 */
+    #sub-view-parenting #parentingPreviewPanel h2 {
+        font-size: 0.94rem !important;
+        margin-bottom: 0.45rem !important;
+        line-height: 1.35 !important;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel h3 {
+        font-size: 0.82rem !important;
+        margin-bottom: 0.35rem !important;
+        line-height: 1.35 !important;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .records-table-container thead th {
+        font-size: 0.64rem !important;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .records-table-container tbody td {
+        font-size: 0.64rem !important;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .parenting-tab-viewport {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .parenting-tab-content-wrapper {
+        flex: 1;
+        min-height: 0;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .parenting-tab-pane,
+    #sub-view-parenting #parentingPreviewPanel .parenting-tab-pane .preview-body {
+        min-height: 0;
+    }
+
+    #sub-view-parenting .parenting-tab-header {
+        position: sticky;
+        top: 0;
+        z-index: 11;
+        background: #fffaf1;
+        border-bottom: 1px solid #e7ddcb;
+        padding: 4px 6px;
+        gap: 4px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+    }
+
+    #sub-view-parenting .parenting-tab-btn {
+        flex: 0 0 auto;
+        padding: 4px 6px;
+        min-height: 28px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        font-size: 0.7rem;
+        white-space: nowrap;
+    }
+
+    #sub-view-parenting .parenting-tab-btn.active {
+        background: #fff;
+        border-color: #eadfc9;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    }
+
+    #sub-view-parenting .parenting-tab-btn.active::after {
+        display: none;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .preview-body {
+        padding: 6px 8px;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .preview-footer {
+        border-top: 1px solid #eee4d6;
+        background: #fff;
+        padding: 6px 8px;
+        position: relative;
+        bottom: auto;
+        z-index: auto;
+        box-shadow: none;
+        flex-shrink: 0;
+    }
+
+    #sub-view-parenting #parentingEditForm .form-grid {
+        align-items: stretch;
+        gap: 10px !important;
+    }
+
+    #sub-view-parenting #parentingEditForm .form-section-compact {
+        border-radius: 12px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        padding: 10px !important;
+    }
+
+    #sub-view-parenting #parentingEditForm .form-section-compact h4 {
+        font-size: 0.88rem;
+        letter-spacing: 0.2px;
+        margin-bottom: 8px !important;
+    }
+
+    #sub-view-parenting #parentingEditForm .form-group label {
+        font-size: 0.78rem;
+        color: #5f5f5f;
+        margin-bottom: 4px;
+        display: inline-block;
+    }
+
+    #sub-view-parenting #parentingEditForm .preview-edit-field {
+        min-height: 38px;
+        font-size: 0.84rem;
+        padding: 5px 10px;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel input,
+    #sub-view-parenting #parentingPreviewPanel select,
+    #sub-view-parenting #parentingPreviewPanel textarea {
+        font-size: 0.84rem !important;
+    }
+
+    /* 四個彩色區塊：同高、對齊 */
+    #sub-view-parenting .parenting-metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        align-items: stretch;
+    }
+
+    #sub-view-parenting .parenting-metric-card {
+        display: flex;
+        flex-direction: column;
+        min-height: 168px;
+        height: auto;
+    }
+
+    #sub-view-parenting .parenting-metric-card--full {
+        grid-column: 1 / -1;
+        min-height: 140px;
+    }
+
+    #sub-view-parenting .parenting-metric-card h4 {
+        min-height: 24px;
+        display: flex;
+        align-items: center;
+    }
+
+    #sub-view-parenting .parenting-metric-row {
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        align-items: end;
+        margin-top: 6px;
+    }
+
+    #sub-view-parenting .parenting-card-contact .parenting-metric-row {
+        gap: 10px;
+    }
+
+    #sub-view-parenting .parenting-card-stats .parenting-stats-row {
+        display: grid !important;
+        align-items: center;
+        justify-items: center;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 10px !important;
+        justify-content: normal;
+    }
+
+    #sub-view-parenting .parenting-card-stats .form-group {
+        width: 100%;
+    }
+
+    #sub-view-parenting .parenting-card-stats {
+        overflow: visible;
+    }
+
+    /* 出席統計卡片縮小：覆蓋 index.html 的 inline style */
+    #sub-view-parenting .parenting-card-stats .parenting-stats-row > .form-group:first-child > div {
+        padding: 4px 10px !important;
+        font-size: 0.92rem !important;
+        min-width: 96px;
+        line-height: 1.1;
+    }
+
+    #sub-view-parenting #parentingEditAttend {
+        font-size: 1.5rem;
+        line-height: 1;
+    }
+
+    #sub-view-parenting .parenting-card-stats .parenting-stats-row > .form-group:last-child > div:first-child {
+        width: 62px !important;
+        height: 62px !important;
+    }
+
+    #sub-view-parenting #parentingAttendRingBg > div {
+        width: 48px !important;
+        height: 48px !important;
+    }
+
+    #sub-view-parenting #parentingEditRate {
+        font-size: 0.82rem !important;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer .records-table th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table {
+        table-layout: fixed;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table th,
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table td {
+        font-size: 0.8rem;
+        padding: 8px 7px;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table thead tr:first-child th:nth-child(1),
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table tbody td:nth-child(1) {
+        width: 108px !important;
+        max-width: 108px;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table thead tr:first-child th:nth-child(2),
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table tbody td:nth-child(2) {
+        width: auto !important;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table tbody td:nth-child(1) {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    #sub-view-parenting #parentingTopicsContainer.parenting-detail-open #parentingTopicsTableWrapper .records-table tbody td:nth-child(2) {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        line-height: 1.2;
+        word-break: normal;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel .btn {
+        min-height: 30px !important;
+        padding: 5px 8px !important;
+        font-size: 0.72rem !important;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel #surveyInputTable,
+    #sub-view-parenting #parentingPreviewPanel #postSurveyInputTable {
+        font-size: 0.72rem !important;
+    }
+
+    #sub-view-parenting #parentingPreviewPanel #surveyDisplaySummary {
+        font-size: 0.78rem !important;
+        line-height: 1.3 !important;
+    }
+
+    /* 講題欄位維持單行，避免折成兩行 */
+    #sub-view-parenting #parentingTopicsTableWrapper .records-table {
+        table-layout: fixed;
+    }
+
+    #sub-view-parenting #parentingTopicsTableWrapper .records-table thead tr:first-child th:nth-child(1) {
+        width: 12% !important;
+    }
+
+    #sub-view-parenting #parentingTopicsTableWrapper .records-table thead tr:first-child th:nth-child(2) {
+        width: 28% !important;
+    }
+
+    #sub-view-parenting #parentingTopicsTableWrapper .records-table tbody td:nth-child(2),
+    #sub-view-parenting #parentingTopicsTableWrapper .records-table thead tr:first-child th:nth-child(2) {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    @media (max-width: 1280px) {
+        #sub-view-parenting #parentingTopicsContainer {
+            flex-direction: column !important;
+        }
+
+        #sub-view-parenting #parentingTopicsTableWrapper,
+        #sub-view-parenting #parentingPreviewPanel {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+
+        #sub-view-parenting #parentingPreviewPanel {
+            height: auto;
+            max-height: none;
+            position: relative;
+            top: auto;
+        }
+    }
+
+    @media (max-width: 768px) {
+        #sub-view-parenting #parentingFilterSection {
+            padding: 12px;
+        }
+
+        #sub-view-parenting .parenting-tab-header {
+            padding: 8px;
+        }
+
+        #sub-view-parenting .parenting-tab-btn {
+            flex: 1 1 calc(50% - 6px);
+            justify-content: center;
+            font-size: 0.86rem;
+            padding: 8px 10px;
+        }
+
+        #sub-view-parenting #parentingEditForm .form-section-compact {
+            grid-column: span 2;
+        }
+
+        #sub-view-parenting .parenting-metrics-grid {
+            grid-template-columns: 1fr;
+        }
+
+        #sub-view-parenting .parenting-metric-card,
+        #sub-view-parenting .parenting-metric-card--full {
+            grid-column: 1 / -1 !important;
+            height: auto;
+            min-height: auto;
         }
     }
 
