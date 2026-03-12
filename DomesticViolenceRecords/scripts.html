@@ -1,0 +1,2690 @@
+<script>
+    // ================================================================
+    // scripts.html - 前端主邏輯
+    // ================================================================
+
+    // ==================== 全域變數 ====================
+    let currentUser = null;
+    let allOptions = {};
+    let allRecords = [];
+    let currentPage = 1;
+    const PAGE_SIZE = 12;
+    // 系統密碼 (Base64 編碼混淆)
+    const _p = 'REDACTED_PASSWORD';
+    let isAuthenticated = false;
+
+    // 專注模式狀態
+    let isFocusMode = false;
+
+    // 個案姓名遮蔽功能
+    function maskName(name) {
+        if (!name || name.length <= 1) return name;
+        if (name.length === 2) return name[0] + 'O';
+        return name[0] + 'O'.repeat(name.length - 2) + name[name.length - 1];
+    }
+
+    function getDisplayName(record) {
+        const name = record['個案姓名'] || '';
+        if (!currentUser || !currentUser.name) return name;
+        if (record['服務社工'] === currentUser.name) return name;
+        return maskName(name);
+    }
+
+    // Emoji 對應表 (僅前端顯示用，不影響後端資料)
+    const emojiMap = {
+        '服務方式': {
+            '面談': '🗣️ 面談',
+            '電談': '📞 電談',
+            '書面': '📨 書面',
+            '電談-聯繫未果': '📞❌ 電談-聯繫未果'
+        },
+        '個案來源': {
+            '接受轉介-司法系統': '⚖️ 接受轉介-司法系統',
+            '接受轉介-社會處': '🏢 接受轉介-社會處',
+            '接受轉介-民間團體': '🕊️ 接受轉介-民間團體',
+            '自行求助': '🙋🏻 自行求助',
+            '自行求助-網絡諮詢': '🌐 自行求助-網絡諮詢'
+        },
+        '服務項目': {
+            '陪同出庭': '👩🏻‍⚖️ 陪同出庭',
+            '諮詢服務': '💬 諮詢服務'
+        }
+    };
+
+    // ==================== 專注模式 ====================
+    /**
+     * 切換專注模式
+     * @param {boolean|undefined} enable - true 進入專注模式, false 退出, undefined 切換
+     */
+    function toggleFocusMode(enable) {
+        const container = document.getElementById('records-tab');
+        if (!container) return;
+
+        if (enable === undefined) {
+            isFocusMode = !isFocusMode;
+        } else {
+            isFocusMode = enable;
+        }
+
+        container.classList.toggle('focus-mode', isFocusMode);
+
+        // 進入專注模式：捲動到預覽面板
+        if (isFocusMode) {
+            setTimeout(() => {
+                const previewPanel = document.getElementById('previewPanel');
+                if (previewPanel) {
+                    previewPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 100);
+        } else {
+            // 退出專注模式：清空預覽內容，顯示 placeholder
+            resetPreviewPanel();
+        }
+    }
+
+    /**
+     * 重設預覽面板到初始狀態
+     */
+    function resetPreviewPanel() {
+        const placeholder = document.querySelector('.preview-placeholder');
+        const previewContent = document.getElementById('previewContent');
+
+        if (placeholder) placeholder.style.display = 'flex';
+        if (previewContent) previewContent.style.display = 'none';
+
+        // 取消選中的列
+        document.querySelectorAll('.records-table tbody tr.selected').forEach(tr => {
+            tr.classList.remove('selected');
+        });
+
+        // 重設狀態
+        currentPreviewId = null;
+        previewHasChanges = false;
+
+        // 隱藏未儲存提示
+        const indicator = document.getElementById('unsavedIndicator');
+        if (indicator) indicator.classList.add('hidden');
+    }
+
+    // ESC 鍵監聽
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && isFocusMode) {
+            e.preventDefault();
+
+            // 檢查是否有未儲存的變更
+            if (previewHasChanges) {
+                const action = confirm('有未儲存的變更，是否要儲存？\n\n按「確定」儲存後關閉\n按「取消」捨棄變更');
+                if (action) {
+                    // 儲存變更
+                    savePreviewChanges();
+                }
+                // 不管選什麼都退出專注模式
+            }
+
+            toggleFocusMode(false);
+        }
+    });
+
+    // ==================== 密碼驗證 ====================
+    function checkPassword() {
+        const input = document.getElementById('systemPassword');
+        const error = document.getElementById('passwordError');
+
+        if (input.value === atob(_p)) {
+            isAuthenticated = true;
+            document.getElementById('passwordModal').style.display = 'none';
+            // 密碼正確，開始初始化系統
+            initializeApp();
+            setupFormEvents();
+        } else {
+            error.style.display = 'block';
+            input.value = '';
+            input.focus();
+            // 震動效果
+            input.style.animation = 'shake 0.5s';
+            setTimeout(() => { input.style.animation = ''; }, 500);
+        }
+    }
+
+    // ==================== 初始化 ====================
+    document.addEventListener('DOMContentLoaded', function () {
+        // 等待密碼驗證後才初始化
+        document.getElementById('systemPassword').focus();
+    });
+
+    // 直接切換頁籤的函數
+    function switchTab(el, tabId) {
+        // 相容性處理：如果只傳入一個參數且為字串 (舊版呼叫方式)
+        if (typeof el === 'string' && tabId === undefined) {
+            tabId = el;
+            el = null;
+        }
+        console.log('Switching to tab:', tabId);
+
+        // 切換頁籤前：關閉預覽面板、退出專注模式
+        if (typeof closeAllPreviewPanels === 'function') {
+            closeAllPreviewPanels();
+        }
+
+        // 1. 清除所有按鈕的樣式
+        const container = document.getElementById('sidebarNav');
+        if (container) {
+            const buttons = container.querySelectorAll('.nav-item');
+            buttons.forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.borderLeft = '';
+                btn.style.fontWeight = '';
+            });
+        }
+
+        // 2. 設定被點擊按鈕的樣式
+        if (el && typeof el !== 'string') {
+            el.classList.add('active');
+            el.style.background = 'rgba(255, 255, 255, 0.2)';
+            el.style.color = 'white';
+            el.style.borderLeft = '4px solid white';
+            el.style.fontWeight = '600';
+            console.log('Active style applied to:', el.innerText);
+        } else {
+            // Fallback
+            const targetBtn = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
+            if (targetBtn) {
+                targetBtn.classList.add('active');
+                targetBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+                targetBtn.style.color = 'white';
+                targetBtn.style.borderLeft = '4px solid white';
+                targetBtn.style.fontWeight = '600';
+            }
+        }
+
+        // 切換頁籤面板
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            if (panel.id === tabId + '-tab') {
+                panel.classList.add('active');
+                panel.style.display = 'block';
+            } else {
+                panel.classList.remove('active');
+                panel.style.display = 'none';
+            }
+        });
+
+        // 載入頁籤內容
+        if (tabId === 'admin' && typeof currentUser !== 'undefined' && currentUser.role === 'admin') {
+            loadUsers();
+            loadSocialWorkerSettings();
+        } else if (tabId === 'records') {
+            // 切換回服務紀錄頁籤，清空搜尋結果
+            allRecords = [];
+            totalRecordCount = 0;
+            currentPage = 1;
+            showEmptyMessage('請選擇查詢條件後點擊「查詢」');
+            resetPreviewChanges();
+        }
+    }
+
+    // 關閉所有預覽面板 (跨頁籤用)
+    function closeAllPreviewPanels() {
+        if (typeof discardPreviewChanges === 'function' && typeof previewHasChanges !== 'undefined' && previewHasChanges) {
+            // 如果有變更，直接重設狀態不阻擋切換
+            previewHasChanges = false;
+        }
+
+        // 關閉服務紀錄預覽
+        const previewContent = document.getElementById('previewContent');
+        const previewPlaceholder = document.querySelector('.preview-placeholder');
+        if (previewContent && previewPlaceholder) {
+            previewContent.style.display = 'none';
+            previewPlaceholder.style.display = 'flex';
+        }
+
+        document.querySelectorAll('#recordsTableBody tr').forEach(row => row.classList.remove('selected'));
+        if (typeof toggleFocusMode === 'function') {
+            toggleFocusMode(false);
+        }
+    }
+
+    // 初始化事件監聽已移除，改用 inline onclick
+
+    function initializeApp() {
+        showLoading();
+
+        // 初始化後端並取得使用者資訊
+        google.script.run
+            .withSuccessHandler(function (result) {
+                console.log('初始化成功');
+                loadUserInfo();
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('初始化失敗: ' + error.message, 'error');
+            })
+            .initializeSpreadsheet();
+    }
+
+    function loadUserInfo() {
+        google.script.run
+            .withSuccessHandler(function (user) {
+                currentUser = user;
+                document.getElementById('currentUserName').textContent = user.name || user.email;
+
+                const roleElement = document.getElementById('currentUserRole');
+                roleElement.textContent = user.role === 'admin' ? '管理者' : '使用者';
+                roleElement.className = 'role-badge ' + user.role;
+
+                // 顯示管理員頁籤
+                if (user.role === 'admin') {
+                    document.getElementById('adminTab').style.display = 'flex';
+                    loadUsers();
+
+                }
+
+                // 載入選項
+                loadOptions();
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('載入使用者資訊失敗: ' + error.message, 'error');
+            })
+            .getCurrentUser();
+    }
+
+    function loadOptions() {
+        google.script.run
+            .withSuccessHandler(function (options) {
+                allOptions = options;
+                initializeFormOptions();
+
+                initializeYearOptions();
+                initializeFilterOptions(); // 初始化篩選器
+                hideLoading();
+                // 預設不載入資料，顯示提示訊息
+                showEmptyMessage('請選擇查詢條件後點擊「查詢」');
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('載入選項失敗: ' + error.message, 'error');
+            })
+            .getAllOptions();
+    }
+
+    // 初始化篩選器選項 (社工)
+    function initializeFilterOptions() {
+        const socialWorkerSelect = document.getElementById('filterSocialWorker');
+        if (socialWorkerSelect && allOptions['服務社工']) {
+            socialWorkerSelect.innerHTML = '<option value="">全部</option>';
+            allOptions['服務社工'].forEach(opt => {
+                if (opt !== '系統管理員') {
+                    const option = document.createElement('option');
+                    option.value = opt;
+                    option.textContent = opt;
+                    socialWorkerSelect.appendChild(option);
+                }
+            });
+        }
+    }
+
+    function initializeYearOptions() {
+        const yearSelect = document.getElementById('filterYear');
+        const statsYearSelect = document.getElementById('statsYear');
+        const currentYear = new Date().getFullYear();
+        // 提供未來 2 年到過去 10 年的選項
+        for (let y = currentYear + 2; y >= currentYear - 10; y--) {
+            const option = document.createElement('option');
+            option.value = y;
+            option.textContent = y + '年';
+            if (y === currentYear) {
+                option.selected = true;
+            }
+            yearSelect.appendChild(option);
+
+            // 統計報表年份（顯示民國年）
+            if (statsYearSelect) {
+                const statsOption = document.createElement('option');
+                statsOption.value = y;
+                statsOption.textContent = (y - 1911) + '年 (' + y + ')';
+                // 預設選擇當年
+                if (y === currentYear) {
+                    statsOption.selected = true;
+                }
+                statsYearSelect.appendChild(statsOption);
+            }
+        }
+    }
+
+    function showEmptyMessage(message) {
+        const tbody = document.getElementById('recordsTableBody');
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-message">' + message + '</td></tr>';
+        document.getElementById('pagination').innerHTML = '';
+    }
+
+    // ==================== 事件監聽器 ====================
+    // Legacy functions removed
+
+    // ==================== 表單選項初始化 ====================
+    function initializeFormOptions() {
+        // 單選欄位
+        const selectFields = [
+            '個案來源', '個案身分', '暴力類型', '個案性別',
+            '服務社工', '服務方式', '服務主題', '服務項目', '接受轉介項目', '轉案股別/單位'
+        ];
+
+        selectFields.forEach(field => {
+            const select = document.getElementById(field);
+            if (!select) return;
+
+            select.innerHTML = '<option value="">請選擇</option>';
+
+            const options = allOptions[field] || []; // 移除在案社工特殊處理
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt;
+                option.textContent = (emojiMap[field] && emojiMap[field][opt]) || opt;
+                select.appendChild(option);
+            });
+        });
+
+        // 篩選器的服務社工選項
+        const filterWorker = document.getElementById('filterSocialWorker');
+        filterWorker.innerHTML = '<option value="">全部</option>';
+        (allOptions['服務社工'] || []).forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt;
+            filterWorker.appendChild(option);
+        });
+
+        // 多選欄位 (Checkbox) - 聯繫和轉介改用階層式選單
+        const multiFields = ['陪同出庭', '人身安全', '會談服務', '法律服務', '通報'];
+
+        multiFields.forEach(field => {
+            const container = document.getElementById(field + '-checkboxes');
+            if (!container) return;
+
+            container.innerHTML = '';
+
+            const options = allOptions[field] || [];
+            options.forEach((opt, index) => {
+                const item = document.createElement('div');
+                item.className = 'checkbox-item';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = field + '_' + index;
+                checkbox.value = opt;
+
+                const label = document.createElement('label');
+                label.htmlFor = field + '_' + index;
+                label.textContent = opt;
+
+                item.appendChild(checkbox);
+                item.appendChild(label);
+                container.appendChild(item);
+            });
+        });
+
+        // 初始化階層式選單 (聯繫、轉介)
+        initHierarchicalFields();
+
+        // 初始化單選階層式欄位
+        initSingleHierarchicalFields();
+    }
+
+    // ==================== 單選階層式欄位 ====================
+
+    // 儲存已解析的階層結構 (單選用)
+    const singleHierarchicalData = {};
+    // 儲存已選擇的值 (單選用)
+    const selectedSingleValues = {
+        '服務主題': '',
+        '暴力類型': '',
+        '接受轉介項目': '',
+        '轉案股別單位': '',
+        '個案國籍': '',
+        'preview個案國籍': '' // 針對預覽面板的狀態紀錄
+    };
+
+    const fieldIdMapping = {
+        '服務主題': '服務主題',
+        '暴力類型': '暴力類型',
+        '接受轉介項目': '接受轉介項目',
+        '轉案股別單位': '轉案股別/單位',
+        '個案國籍': '個案國籍',
+        'preview個案國籍': 'preview個案國籍'
+    };
+
+    // 初始化所有單選階層式欄位
+    function initSingleHierarchicalFields() {
+        // 設定寫死/動態的層級邏輯給個案國籍
+        setupNationalityHierarchyData();
+
+        const fields = ['服務主題', '暴力類型', '接受轉介項目', '轉案股別單位', '個案國籍', 'preview個案國籍'];
+        fields.forEach(field => {
+            if (field !== '個案國籍' && field !== 'preview個案國籍') {
+                parseSingleOptionsToHierarchy(field);
+            }
+            setupSingleHierarchicalEvents(field);
+        });
+    }
+
+    // 手動建立個案國籍的階層結構資料
+    function setupNationalityHierarchyData() {
+        const nationalityData = {
+            categories: new Map([
+                ['本國籍', new Set(['一般', '原住民'])],
+                ['本國籍(新住民)', new Set(['原籍大陸', '原籍越南', '原籍印尼'])],
+                ['外國籍', new Set(['大陸籍', '外國籍-越南', '外國籍-印尼'])]
+            ]),
+            standalone: []
+        };
+
+        singleHierarchicalData['個案國籍'] = nationalityData;
+        singleHierarchicalData['preview個案國籍'] = nationalityData;
+
+        // 填充類別選項 - 表單
+        const formCategorySelect = document.getElementById('個案國籍-category');
+        if (formCategorySelect) {
+            formCategorySelect.innerHTML = '<option value="">選擇類別</option>';
+            nationalityData.categories.forEach((subs, cat) => {
+                const option = document.createElement('option');
+                option.value = cat;
+                option.textContent = cat + ' ▸';
+                formCategorySelect.appendChild(option);
+            });
+        }
+
+        // 填充類別選項 - 預覽面板
+        const previewCategorySelect = document.getElementById('preview個案國籍-category');
+        if (previewCategorySelect) {
+            previewCategorySelect.innerHTML = '<option value="">選擇類別</option>';
+            nationalityData.categories.forEach((subs, cat) => {
+                const option = document.createElement('option');
+                option.value = cat;
+                option.textContent = cat + ' ▸';
+                previewCategorySelect.appendChild(option);
+            });
+        }
+    }
+
+    // 解析選項為階層結構 (單選用)
+    function parseSingleOptionsToHierarchy(field) {
+        // 取得對應的選項 key
+        const optionKey = fieldIdMapping[field];
+        const options = allOptions[optionKey] || [];
+        const hierarchy = {
+            categories: new Map(), // Map<categoryName, Set<subcategory>>
+            standalone: []         // 獨立選項 (無 - 分隔)
+        };
+
+        // 第一輪：識別帶 - 的類別
+        const baseFieldName = field.replace('preview', '');
+        options.forEach(opt => {
+            if (opt.includes('-')) {
+                const dashIndex = opt.indexOf('-');
+                const category = opt.substring(0, dashIndex);
+                const subcategory = opt.substring(dashIndex + 1);
+
+                // 服務主題和接受轉介項目的「其他」改為獨立自填，不建立細項
+                if ((baseFieldName === '服務主題' || baseFieldName === '接受轉介項目') && category === '其他') {
+                    return;
+                }
+
+                if (!hierarchy.categories.has(category)) {
+                    hierarchy.categories.set(category, new Set());
+                }
+                hierarchy.categories.get(category).add(subcategory);
+            }
+        });
+
+        // 第二輪：加入獨立選項，但排除已作為類別存在的
+        options.forEach(opt => {
+            if (!opt.includes('-')) {
+                // 如果這個選項名稱已經是一個類別（有子選項），則跳過
+                if (hierarchy.categories.has(opt)) {
+                    return;
+                }
+                hierarchy.standalone.push(opt);
+            }
+        });
+
+        singleHierarchicalData[field] = hierarchy;
+
+        // 填充類別選項
+        const categorySelect = document.getElementById(field + '-category');
+        if (!categorySelect) return;
+
+        categorySelect.innerHTML = '<option value="">選擇類別</option>';
+
+        // 先加入獨立選項 (當作可直接選擇的類別)
+        hierarchy.standalone.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = '__direct__:' + opt;
+            option.textContent = opt;
+            categorySelect.appendChild(option);
+        });
+
+        // 再加入帶子項的類別
+        hierarchy.categories.forEach((subs, cat) => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.textContent = cat + ' ▸';  // 加箭頭表示有子選項
+            categorySelect.appendChild(option);
+        });
+
+        // 如果沒有任何帶子項的類別，隱藏細項選單和自填
+        const subcatEl = document.getElementById(field + '-subcategory');
+        const customEl = document.getElementById(field + '-custom');
+        if (hierarchy.categories.size === 0) {
+            if (subcatEl) subcatEl.style.display = 'none';
+            // 自填只在需要時才由事件處理器顯示
+        }
+    }
+
+    // 設定單選階層式選單事件
+    function setupSingleHierarchicalEvents(field) {
+        const categorySelect = document.getElementById(field + '-category');
+        const subcategorySelect = document.getElementById(field + '-subcategory');
+        const customInput = document.getElementById(field + '-custom');
+        const displayDiv = document.getElementById(field + '-display');
+        const hiddenInput = document.getElementById(fieldIdMapping[field]);
+
+        if (!categorySelect) return;
+
+        // 類別變更時
+        categorySelect.addEventListener('change', function () {
+            const value = this.value;
+            subcategorySelect.innerHTML = '<option value="">選擇細項</option>';
+            customInput.style.display = 'none';
+            customInput.value = '';
+
+            // 標記國籍欄位被手動修改 (排除載入時的程式觸發)
+            if (field === '個案國籍' && !isLoadingData) _nationalityManuallyChanged = true;
+            if (field === 'preview個案國籍' && !isLoadingData) _previewNationalityManuallyChanged = true;
+
+            // 直接選項 (不需要子選項)
+            if (value.startsWith('__direct__:')) {
+                const directValue = value.replace('__direct__:', '');
+
+                // 特殊處理：需要自填的獨立選項
+                const bf = field.replace('preview', '');
+                if ((bf === '轉案股別單位' && directValue === '民團') ||
+                    (bf === '服務主題' && directValue === '其他')) {
+                    subcategorySelect.style.display = 'none';
+                    customInput.style.display = 'block';
+                    customInput.placeholder = bf === '轉案股別單位' ? '請輸入民團名稱...' : '請輸入內容...';
+                    customInput.value = '';
+                    customInput.focus();
+                    setSingleFieldValue(field, ''); // 等待輸入
+                    return;
+                }
+
+                subcategorySelect.disabled = true;
+                setSingleFieldValue(field, directValue);
+                return;
+            }
+
+            if (!value) {
+                subcategorySelect.disabled = true;
+                setSingleFieldValue(field, '');
+                return;
+            }
+
+            subcategorySelect.style.display = ''; // 恢復顯示
+
+            subcategorySelect.disabled = false;
+
+            // 顯示該類別下的細項
+            const subcategories = singleHierarchicalData[field].categories.get(value);
+            if (subcategories) {
+                subcategories.forEach(sub => {
+                    const option = document.createElement('option');
+                    option.value = sub;
+                    option.textContent = sub;
+                    subcategorySelect.appendChild(option);
+                });
+            }
+            // 新增「其他」選項用於自填
+            const otherOption = document.createElement('option');
+            otherOption.value = '__other__';
+            otherOption.textContent = '其他 (自填)';
+            subcategorySelect.appendChild(otherOption);
+
+            // 暫時清除選擇
+            setSingleFieldValue(field, '');
+        });
+
+        // 細項變更時
+        subcategorySelect.addEventListener('change', function () {
+            const categoryValue = categorySelect.value;
+            const subcategoryValue = this.value;
+
+            if (subcategoryValue === '__other__') {
+                customInput.style.display = 'block';
+                customInput.focus();
+                setSingleFieldValue(field, '');
+            } else if (subcategoryValue) {
+                customInput.style.display = 'none';
+                customInput.value = '';
+                const fullValue = categoryValue + '-' + subcategoryValue;
+                setSingleFieldValue(field, fullValue);
+            } else {
+                customInput.style.display = 'none';
+                customInput.value = '';
+                setSingleFieldValue(field, '');
+            }
+        });
+
+        // 自填輸入時 (即時更新)
+        customInput.addEventListener('input', function () {
+            let categoryValue = categorySelect.value;
+            // 去掉 __direct__: 前綴（如「民團」的自填情境）
+            if (categoryValue.startsWith('__direct__:')) {
+                categoryValue = categoryValue.replace('__direct__:', '');
+            }
+            const customValue = this.value.trim();
+            if (customValue) {
+                const fullValue = categoryValue + '-' + customValue;
+                setSingleFieldValue(field, fullValue);
+            } else {
+                setSingleFieldValue(field, '');
+            }
+        });
+
+        // 按 Enter 確認自填
+        customInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.blur();
+            }
+        });
+    }
+
+    // 設定單選欄位的值並更新顯示
+    function setSingleFieldValue(field, value) {
+        selectedSingleValues[field] = value;
+        const displayDiv = document.getElementById(field + '-display');
+        const hiddenInput = document.getElementById(fieldIdMapping[field]);
+
+        if (hiddenInput) {
+            hiddenInput.value = value;
+        }
+
+        if (displayDiv) {
+            if (value) {
+                displayDiv.innerHTML = `<span class="selected-value-tag">${value} <button type="button" class="clear-btn" onclick="clearSingleFieldValue('${field}')">&times;</button></span>`;
+            } else {
+                displayDiv.innerHTML = '';
+            }
+        }
+    }
+
+    // 清除單選欄位的值
+    function clearSingleFieldValue(field) {
+        const categorySelect = document.getElementById(field + '-category');
+        const subcategorySelect = document.getElementById(field + '-subcategory');
+        const customInput = document.getElementById(field + '-custom');
+
+        if (categorySelect) categorySelect.value = '';
+        if (subcategorySelect) {
+            subcategorySelect.value = '';
+            subcategorySelect.disabled = true;
+            subcategorySelect.innerHTML = '<option value="">選擇細項</option>';
+        }
+        if (customInput) {
+            customInput.value = '';
+            customInput.style.display = 'none';
+        }
+
+        setSingleFieldValue(field, '');
+    }
+
+    // 載入單選階層式欄位的值
+    function loadSingleFieldValue(field, value) {
+        if (!value) {
+            clearSingleFieldValue(field);
+            return;
+        }
+
+        const categorySelect = document.getElementById(field + '-category');
+        const subcategorySelect = document.getElementById(field + '-subcategory');
+        const customInput = document.getElementById(field + '-custom');
+
+        if (!categorySelect) return;
+
+        // --- 個案國籍 舊資料相容層 ---
+        let processedValue = value;
+        let isNationalityField = field === '個案國籍' || field === 'preview個案國籍';
+
+        if (isNationalityField && value) {
+            // 如果是舊的外國籍寫法 (例如: 外國籍-緬甸)
+            if (value.startsWith('外國籍-')) {
+                // 檢查是否在新選項中 (外國籍-越南, 外國籍-印尼)
+                const subcategory = value.replace('外國籍-', '外國籍-'); // 其實就等於 value
+                const nationalityData = singleHierarchicalData['個案國籍'];
+                if (!nationalityData.categories.get('外國籍').has(subcategory)) {
+                    // 如果不在預設裡 (例如: 緬甸)，我們要把分類設為 "外國籍"，細項設為 "緬甸" (自填)
+                    processedValue = '外國籍-' + value.replace('外國籍-', '');
+                } else {
+                    processedValue = '外國籍-' + subcategory;
+                }
+            }
+            // 如果是舊的本國籍寫法 (例如: 本國籍-原籍菲律賓)
+            else if (value.startsWith('本國籍-原籍')) {
+                const subcategory = value.replace('本國籍-', ''); // 原籍菲律賓
+                const nationalityData = singleHierarchicalData['個案國籍'];
+                if (!nationalityData.categories.get('本國籍(新住民)').has(subcategory)) {
+                    processedValue = '本國籍(新住民)-' + subcategory;
+                } else {
+                    processedValue = '本國籍(新住民)-' + subcategory;
+                }
+            }
+            // 如果是舊的 本國籍原住民 (沒有減號)
+            else if (value === '本國籍原住民') {
+                processedValue = '本國籍-原住民';
+            }
+            // 如果只有 本國籍
+            else if (value === '本國籍') {
+                processedValue = '本國籍-一般';
+            }
+            // 如果只有 大陸籍
+            else if (value === '大陸籍') {
+                processedValue = '外國籍-大陸籍'; // 新設計中 大陸籍 被放在 外國籍 底下
+            }
+        }
+
+        // --- 暴力類型 舊資料相容層 ---
+        const baseField = field.replace('preview', '');
+        if (baseField === '暴力類型' && value) {
+            // 舊選項「其他四等親暴力」→ 新選項「四等親及其他」
+            if (value === '其他四等親暴力') {
+                processedValue = '四等親及其他';
+            }
+            // 舊選項「其他」或「其他(xxx)」→ 新選項「四等親及其他」
+            else if (value === '其他' || value.startsWith('其他')) {
+                processedValue = '四等親及其他';
+            }
+        }
+
+        // --- 接受轉介項目 舊資料相容層 ---
+        if (baseField === '接受轉介項目' && value) {
+            // 舊選項「其他-抗告」、「其他-查詢」→ 新選項「其他」
+            if (value.startsWith('其他-')) {
+                processedValue = '其他';
+            }
+        }
+
+        // --- 轉案股別/單位 舊資料相容層 ---
+        if (baseField === '轉案股別單位' && value) {
+            // 舊選項「民團-大心」、「民團-勵馨」等 → 新選項「民團」+ 自填
+            if (value.startsWith('民團-')) {
+                processedValue = '民團';
+                // 延遲設定自填值（等 change 事件處理完）
+                const oldSubValue = value.replace('民團-', '');
+                setTimeout(() => {
+                    if (customInput) {
+                        customInput.style.display = 'block';
+                        customInput.value = oldSubValue;
+                    }
+                    setSingleFieldValue(field, value); // 保留原始完整值
+                }, 150);
+            }
+        }
+
+        // --- 服務主題 舊資料相容層 ---
+        if (baseField === '服務主題' && value && value.startsWith('其他-')) {
+            // 舊資料「其他-xxx」→ 選擇「其他」+ 自填
+            processedValue = '__direct_custom__:其他';
+            const oldCustomValue = value.replace('其他-', '');
+            // 設定為獨立選項 + 顯示自填
+            categorySelect.value = '__direct__:其他';
+            categorySelect.dispatchEvent(new Event('change'));
+            setTimeout(() => {
+                if (customInput) {
+                    customInput.style.display = 'block';
+                    customInput.value = oldCustomValue;
+                }
+                setSingleFieldValue(field, value); // 保留原始完整值
+            }, 150);
+            return;
+        }
+
+        // 檢查是否是帶 - 的階層值
+        if (processedValue.includes('-')) {
+            const dashIndex = processedValue.indexOf('-');
+            const category = processedValue.substring(0, dashIndex);
+            const subcategory = processedValue.substring(dashIndex + 1);
+
+            // 設定類別
+            categorySelect.value = category;
+            categorySelect.dispatchEvent(new Event('change'));
+
+            // 稍後設定子類別 (等 change 事件處理完)
+            setTimeout(() => {
+                // 檢查子類別是否在選項中
+                let found = false;
+                for (let i = 0; i < subcategorySelect.options.length; i++) {
+                    if (subcategorySelect.options[i].value === subcategory) {
+                        subcategorySelect.value = subcategory;
+                        found = true;
+                        break;
+                    }
+                }
+                // 如果沒找到，使用自填
+                if (!found && subcategory) {
+                    subcategorySelect.value = '__other__';
+                    subcategorySelect.dispatchEvent(new Event('change'));
+                    customInput.value = subcategory;
+                    customInput.dispatchEvent(new Event('input'));
+                } else {
+                    subcategorySelect.dispatchEvent(new Event('change'));
+                }
+            }, 50);
+        } else {
+            // 獨立選項
+            categorySelect.value = '__direct__:' + processedValue;
+            categorySelect.dispatchEvent(new Event('change'));
+        }
+    }
+
+    // 重設所有單選階層式欄位
+    function resetSingleHierarchicalFields() {
+        const fields = ['服務主題', '暴力類型', '接受轉介項目', '轉案股別單位', '個案國籍'];
+        fields.forEach(field => {
+            clearSingleFieldValue(field);
+        });
+    }
+
+    // 取得單選欄位的值 (用於儲存)
+    function getSingleFieldValue(field) {
+        return selectedSingleValues[field] || '';
+    }
+
+
+    // ==================== 階層式選單 (聯繫/轉介) ====================
+
+    // 儲存已解析的階層結構
+    const hierarchicalData = {};
+    // 儲存已選擇的值
+    const selectedHierarchicalValues = {
+        '聯繫': [],
+        '轉介': []
+    };
+
+    // 初始化所有階層式欄位
+    function initHierarchicalFields() {
+        ['聯繫', '轉介'].forEach(field => {
+            parseOptionsToHierarchy(field);
+            setupHierarchicalEvents(field);
+        });
+    }
+
+    // 解析選項為階層結構
+    function parseOptionsToHierarchy(field) {
+        const options = allOptions[field] || [];
+        const hierarchy = {
+            categories: new Map(), // Map<categoryName, Set<subcategory>>
+            standalone: []         // 獨立選項 (無 - 分隔)
+        };
+
+        options.forEach(opt => {
+            if (opt.includes('-')) {
+                const dashIndex = opt.indexOf('-');
+                const category = opt.substring(0, dashIndex);
+                const subcategory = opt.substring(dashIndex + 1);
+
+                if (!hierarchy.categories.has(category)) {
+                    hierarchy.categories.set(category, new Set());
+                }
+                hierarchy.categories.get(category).add(subcategory);
+            } else {
+                hierarchy.standalone.push(opt);
+            }
+        });
+
+        hierarchicalData[field] = hierarchy;
+
+        // 填充類別選項
+        const categorySelect = document.getElementById(field + '-category');
+        if (!categorySelect) return;
+
+        categorySelect.innerHTML = '<option value="">選擇類別</option>';
+
+        // 如果選項中已經有 "其他"，先移除，以免重複 (我們會在後面手動加入帶有特殊邏輯的 "其他 ▸")
+        if (hierarchy.categories.has('其他')) {
+            hierarchy.categories.delete('其他');
+        }
+        hierarchy.standalone = hierarchy.standalone.filter(opt => opt !== '其他');
+
+        // 新增帶 - 的類別
+        hierarchy.categories.forEach((subs, cat) => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.textContent = cat + ' ▸';
+            categorySelect.appendChild(option);
+        });
+
+        // 修改：獨立選項直接加入第一層 (不分組)
+        hierarchy.standalone.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = '__direct__:' + opt;
+            option.textContent = opt;
+            categorySelect.appendChild(option);
+        });
+
+        // 修改：新增固定的「其他」類別
+        if (!hierarchy.categories.has('其他')) {
+            const option = document.createElement('option');
+            option.value = '__other_category__';
+            option.textContent = '其他 ▸';
+            categorySelect.appendChild(option);
+        }
+    }
+
+    // 設定階層式選單事件
+    function setupHierarchicalEvents(field) {
+        const categorySelect = document.getElementById(field + '-category');
+        const subcategorySelect = document.getElementById(field + '-subcategory');
+        const customInput = document.getElementById(field + '-custom');
+
+        if (!categorySelect) return;
+
+        // 類別變更時載入細項
+        categorySelect.addEventListener('change', function () {
+            const category = this.value;
+            subcategorySelect.innerHTML = '<option value="">選擇細項</option>';
+            customInput.style.display = 'none';
+            customInput.value = '';
+
+            if (!category) {
+                subcategorySelect.disabled = true;
+                return;
+            }
+
+            // 修改：處理獨立選項 (直接值) - 隱藏細項選單
+            if (category.startsWith('__direct__:')) {
+                subcategorySelect.disabled = true;
+                subcategorySelect.style.display = 'none'; // 隱藏
+                return;
+            }
+
+            // 修改：處理「其他」類別 (直接顯示輸入框) - 隱藏細項選單
+            if (category === '__other_category__' || category === '其他') {
+                subcategorySelect.disabled = true; // 不需要細項
+                subcategorySelect.style.display = 'none'; // 隱藏
+                customInput.style.display = 'block';
+                customInput.placeholder = '請輸入內容...';
+                customInput.focus();
+                return;
+            }
+
+            subcategorySelect.disabled = false;
+            subcategorySelect.style.display = ''; // 恢復顯示
+
+            // 顯示該類別下的細項
+            const subcategories = hierarchicalData[field].categories.get(category);
+            if (subcategories) {
+                subcategories.forEach(sub => {
+                    const option = document.createElement('option');
+                    option.value = sub;
+                    option.textContent = sub;
+                    subcategorySelect.appendChild(option);
+                });
+            }
+            // 新增「其他」選項用於自填
+            const otherOption = document.createElement('option');
+            otherOption.value = '__other__';
+            otherOption.textContent = '其他 (自填)';
+            subcategorySelect.appendChild(otherOption);
+        });
+
+        // 細項變更時處理自填
+        subcategorySelect.addEventListener('change', function () {
+            if (this.value === '__other__') {
+                customInput.style.display = 'block';
+                customInput.focus();
+            } else {
+                customInput.style.display = 'none';
+                customInput.value = '';
+            }
+        });
+    }
+
+    // 新增階層式選項
+    function addHierarchicalItem(field) {
+        const categorySelect = document.getElementById(field + '-category');
+        const subcategorySelect = document.getElementById(field + '-subcategory');
+        const customInput = document.getElementById(field + '-custom');
+
+        const category = categorySelect.value;
+        let subcategory = subcategorySelect.value;
+
+        if (!category) {
+            showToast('請先選擇類別', 'warning');
+            return;
+        }
+
+        if (category.startsWith('__direct__:')) {
+            // 獨立選項不需要細項
+        } else if (category === '__other_category__' || category === '其他') {
+            // 其他類別檢查輸入框，在下方處理
+        } else if (!subcategory) {
+            showToast('請選擇細項', 'warning');
+            return;
+        }
+
+        // 處理自填
+        if (subcategory === '__other__') {
+            subcategory = customInput.value.trim();
+            if (!subcategory) {
+                showToast('請輸入自訂內容', 'warning');
+                customInput.focus();
+                return;
+            }
+        }
+
+        // 組合完整值
+        let fullValue;
+        if (category.startsWith('__direct__:')) {
+            fullValue = category.replace('__direct__:', '');
+        } else if (category === '__other_category__' || category === '其他') {
+            // 其他類別直接取用輸入值
+            const customVal = customInput.value.trim();
+            if (!customVal) {
+                showToast('請輸入自訂內容', 'warning');
+                customInput.focus();
+                return;
+            }
+            fullValue = '其他-' + customVal;
+        } else {
+            fullValue = category + '-' + subcategory;
+        }
+
+        // 檢查重複
+        if (selectedHierarchicalValues[field].includes(fullValue)) {
+            showToast('此選項已存在', 'warning');
+            return;
+        }
+
+        // 新增到已選擇列表
+        selectedHierarchicalValues[field].push(fullValue);
+        updateHierarchicalTags(field);
+        updateHierarchicalHiddenValue(field);
+
+        // 重置選擇
+        categorySelect.value = '';
+        subcategorySelect.innerHTML = '<option value="">選擇細項</option>';
+        subcategorySelect.disabled = true;
+        customInput.style.display = 'none';
+        customInput.value = '';
+
+        showToast('已新增: ' + fullValue, 'success');
+    }
+
+    // 移除階層式選項
+    function removeHierarchicalItem(field, value) {
+        const index = selectedHierarchicalValues[field].indexOf(value);
+        if (index > -1) {
+            selectedHierarchicalValues[field].splice(index, 1);
+            updateHierarchicalTags(field);
+            updateHierarchicalHiddenValue(field);
+        }
+    }
+
+    // 更新標籤顯示
+    function updateHierarchicalTags(field) {
+        const container = document.getElementById(field + '-selected-tags');
+        if (!container) return;
+
+        container.innerHTML = '';
+        selectedHierarchicalValues[field].forEach(value => {
+            const tag = document.createElement('span');
+            tag.className = 'selected-tag';
+            tag.innerHTML = `
+                ${value}
+                <button type="button" class="remove-tag" onclick="removeHierarchicalItem('${field}', '${value.replace(/'/g, "\\'")}')">✕</button>
+            `;
+            container.appendChild(tag);
+        });
+    }
+
+    // 更新隱藏欄位值
+    function updateHierarchicalHiddenValue(field) {
+        const hiddenInput = document.getElementById(field + '-values');
+        if (hiddenInput) {
+            hiddenInput.value = selectedHierarchicalValues[field].join(';');
+        }
+    }
+
+    // 載入已有的階層式值 (編輯時用)
+    function loadHierarchicalValues(field, values) {
+        selectedHierarchicalValues[field] = [];
+
+        if (typeof values === 'string') {
+            values = values.split(';').map(s => s.trim()).filter(Boolean);
+        }
+
+        if (Array.isArray(values)) {
+            selectedHierarchicalValues[field] = values;
+        }
+
+        updateHierarchicalTags(field);
+        updateHierarchicalHiddenValue(field);
+    }
+
+    // 清空階層式選擇 (新增表單時用)
+    function clearHierarchicalFields() {
+        ['聯繫', '轉介'].forEach(field => {
+            selectedHierarchicalValues[field] = [];
+            updateHierarchicalTags(field);
+            updateHierarchicalHiddenValue(field);
+
+            const categorySelect = document.getElementById(field + '-category');
+            const subcategorySelect = document.getElementById(field + '-subcategory');
+            const customInput = document.getElementById(field + '-custom');
+
+            if (categorySelect) categorySelect.value = '';
+            if (subcategorySelect) {
+                subcategorySelect.innerHTML = '<option value="">選擇細項</option>';
+                subcategorySelect.disabled = true;
+            }
+            if (customInput) {
+                customInput.style.display = 'none';
+                customInput.value = '';
+            }
+        });
+    }
+
+    // ==================== 服務紀錄 CRUD ====================
+    let totalRecordCount = 0;  // 總筆數由後端提供
+
+    function loadRecords() {
+        showLoading();
+
+        const filters = getFilters();
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                // 新的 API 回傳格式: { records, totalCount, page, pageSize }
+                allRecords = result.records || [];
+                totalRecordCount = result.totalCount || 0;
+                currentPage = result.page || 1;
+
+                renderRecordsTable();
+                hideLoading();
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('載入紀錄失敗: ' + error.message, 'error');
+            })
+            .getRecords(filters, currentPage, PAGE_SIZE);
+    }
+
+    function getFilters() {
+        const filters = {};
+
+        const year = document.getElementById('filterYear').value;
+        const month = document.getElementById('filterMonth').value;
+        const socialWorker = document.getElementById('filterSocialWorker').value;
+        const caseName = document.getElementById('filterCaseName').value;
+
+        if (year) filters.year = parseInt(year);
+        if (month) filters.month = parseInt(month);
+        if (socialWorker) filters['服務社工'] = socialWorker;
+        if (caseName) filters['個案姓名'] = caseName;
+
+        return filters;
+    }
+
+    function searchRecords() {
+        const filters = getFilters();
+        // 必須至少選擇一個條件
+        if (!filters.year && !filters['個案姓名']) {
+            showToast('請至少選擇年份或輸入個案姓名', 'error');
+            return;
+        }
+        currentPage = 1;
+        loadRecords();
+    }
+
+    function resetFilters() {
+        document.getElementById('filterYear').value = '';
+        document.getElementById('filterMonth').value = '';
+        document.getElementById('filterSocialWorker').value = '';
+        document.getElementById('filterCaseName').value = '';
+        currentPage = 1;
+        allRecords = [];
+        showEmptyMessage('請選擇查詢條件後點擊「查詢」');
+    }
+
+    function renderRecordsTable() {
+        const tbody = document.getElementById('recordsTableBody');
+
+        // 確保 allRecords 是陣列
+        if (!allRecords || !Array.isArray(allRecords)) {
+            allRecords = [];
+        }
+
+        if (allRecords.length === 0 && totalRecordCount === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-message">尚無資料，請點擊「新增紀錄」開始</td></tr>';
+            renderPagination(0);
+            // 重設預覽面板
+            currentPreviewId = null;
+            document.getElementById('previewContent').style.display = 'none';
+            document.querySelector('.preview-placeholder').style.display = 'flex';
+            return;
+        }
+
+        // 後端已經做完分頁，直接渲染 allRecords
+        tbody.innerHTML = allRecords.map(record => `
+    <tr data-record-id="${record['RecordId'] || ''}" onclick="showPreview('${record['RecordId'] || ''}')">
+      <td data-label="服務日期">${formatDate(record['服務日期'])}</td>
+      <td data-label="個案姓名">${getDisplayName(record)}</td>
+      <td data-label="個案身分">${record['個案身分'] || ''}</td>
+      <td data-label="服務社工">${record['服務社工'] || ''}</td>
+      <td data-label="服務方式">${(emojiMap['服務方式'] && emojiMap['服務方式'][record['服務方式']]) || record['服務方式'] || ''}</td>
+      <td data-label="操作" class="action-cell">
+        <button class="btn btn-info btn-sm" onclick="event.stopPropagation(); editRecord('${record['RecordId'] || ''}')" title="編輯">✏️</button>
+        <button class="btn btn-success btn-sm" onclick="event.stopPropagation(); copyRecord('${record['RecordId'] || ''}')" title="複製">📋</button>
+        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); confirmDeleteRecord('${record['RecordId'] || ''}')" title="刪除">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+
+        // 使用後端回傳的總筆數
+        renderPagination(totalRecordCount);
+    }
+
+    function renderPagination(totalCount) {
+        const pagination = document.getElementById('pagination');
+        const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let html = `<span style="margin-right: 10px;">共 ${totalCount} 筆，第 ${currentPage}/${totalPages} 頁</span>`;
+
+        // 上一頁
+        if (currentPage > 1) {
+            html += `<button onclick="goToPage(${currentPage - 1})">◀ 上一頁</button>`;
+        }
+
+        // 首頁
+        if (currentPage > 3) {
+            html += `<button onclick="goToPage(1)">1</button>`;
+            if (currentPage > 4) {
+                html += `<span style="padding: 0 5px;">...</span>`;
+            }
+        }
+
+        // 顯示當前頁附近 ±2 頁
+        const startPage = Math.max(1, currentPage - 2);
+        const endPage = Math.min(totalPages, currentPage + 2);
+
+        for (let i = startPage; i <= endPage; i++) {
+            const active = i === currentPage ? 'active' : '';
+            html += `<button class="${active}" onclick="goToPage(${i})">${i}</button>`;
+        }
+
+        // 末頁
+        if (currentPage < totalPages - 2) {
+            if (currentPage < totalPages - 3) {
+                html += `<span style="padding: 0 5px;">...</span>`;
+            }
+            html += `<button onclick="goToPage(${totalPages})">${totalPages}</button>`;
+        }
+
+        // 下一頁
+        if (currentPage < totalPages) {
+            html += `<button onclick="goToPage(${currentPage + 1})">下一頁 ▶</button>`;
+        }
+
+        pagination.innerHTML = html;
+    }
+
+    function goToPage(page) {
+        currentPage = page;
+        loadRecords();  // 後端分頁，需要重新載入
+    }
+
+    // ==================== 新增/編輯紀錄 Modal ====================
+    function openAddRecordModal() {
+        document.getElementById('recordModalTitle').textContent = '新增服務紀錄';
+        document.getElementById('recordId').value = '';
+        document.getElementById('recordForm').reset();
+
+        // 設定預設值
+        document.getElementById('服務日期').value = formatDateForInput(new Date());
+
+        // 重設 checkbox
+        document.querySelectorAll('#recordForm input[type="checkbox"]').forEach(cb => {
+            cb.checked = false;
+        });
+
+        // 清空階層式選單 (聯繫、轉介)
+        clearHierarchicalFields();
+
+        // 重設單選階層式欄位
+        resetSingleHierarchicalFields();
+
+        document.getElementById('服務方式').disabled = false;
+        document.getElementById('在案社工Group').style.display = 'none';
+        document.getElementById('接受轉介項目Group').style.display = 'none';
+        document.getElementById('轉案股別單位Group').style.display = 'none';
+
+        // 自動帶入目前登入的服務社工
+        if (currentUser && currentUser.name) {
+            const swSelect = document.getElementById('服務社工');
+            if (swSelect) swSelect.value = currentUser.name;
+        }
+
+        document.getElementById('recordModal').classList.add('show');
+    }
+
+    function editRecord(recordId) {
+        const record = allRecords.find(r => r.RecordId === recordId);
+        if (!record) {
+            showToast('找不到該筆紀錄', 'error');
+            return;
+        }
+
+        document.getElementById('recordModalTitle').textContent = '編輯服務紀錄';
+        document.getElementById('recordId').value = recordId;
+
+        // 填入單選欄位
+        document.getElementById('服務日期').value = formatDateForInput(new Date(record['服務日期']));
+        document.getElementById('個案姓名').value = record['個案姓名'] || '';
+        document.getElementById('個案性別').value = record['個案性別'] || '';
+        document.getElementById('個案身分').value = record['個案身分'] || '';
+        _originalRawNationality = record['個案國籍'] || '';
+        _nationalityManuallyChanged = false;
+        isLoadingData = true;
+        loadSingleFieldValue('個案國籍', record['個案國籍'] || '');
+        isLoadingData = false;
+        document.getElementById('個案來源').value = record['個案來源'] || '';
+        document.getElementById('有無在案').value = record['有無在案'] ? 'true' : 'false';
+        document.getElementById('在案社工').value = record['在案社工'] || '';
+        document.getElementById('服務社工').value = record['服務社工'] || '';
+        document.getElementById('服務方式').value = record['服務方式'] || '';
+        document.getElementById('服務項目').value = record['服務項目'] || '';
+
+        // 服務項目=陪同出庭 → 鎖定服務方式為面談 + 隱藏聯繫
+        const isCourtAttendance = record['服務項目'] === '陪同出庭';
+        document.getElementById('服務方式').disabled = isCourtAttendance;
+        const contactGroup = document.getElementById('聯繫FormGroup');
+        if (contactGroup) contactGroup.style.display = isCourtAttendance ? 'none' : '';
+
+        // 使用單選階層式欄位設值函數
+        loadSingleFieldValue('服務主題', record['服務主題'] || '');
+        loadSingleFieldValue('暴力類型', record['暴力類型'] || '');
+        loadSingleFieldValue('接受轉介項目', record['接受轉介項目'] || '');
+        loadSingleFieldValue('轉案股別單位', record['轉案股別/單位'] || '');
+
+        // 顯示/隱藏在案社工
+        document.getElementById('在案社工Group').style.display = record['有無在案'] ? 'block' : 'none';
+
+        // 顯示/隱藏接受轉介項目和轉案股別
+        const isReferral = (record['個案來源'] || '').startsWith('接受轉介');
+        const refGroup = document.getElementById('接受轉介項目Group');
+        const transGroup = document.getElementById('轉案股別單位Group');
+        if (refGroup) refGroup.style.display = isReferral ? 'block' : 'none';
+        if (transGroup) transGroup.style.display = isReferral ? 'block' : 'none';
+
+        // 填入多選欄位 (checkbox)
+        const multiFields = ['陪同出庭', '人身安全', '會談服務', '法律服務', '通報'];
+        multiFields.forEach(field => {
+            let values = record[field] || [];
+            // 確保 values 是陣列並清理空格
+            if (typeof values === 'string') {
+                values = values.split(';').map(s => s.trim()).filter(Boolean);
+            }
+            const trimmedValues = values.map(v => String(v).trim());
+            document.querySelectorAll(`#${field}-checkboxes input[type="checkbox"]`).forEach(cb => {
+                cb.checked = trimmedValues.includes(cb.value.trim());
+            });
+        });
+
+        // 載入階層式欄位 (聯繫、轉介)
+        loadHierarchicalValues('聯繫', record['聯繫'] || []);
+        loadHierarchicalValues('轉介', record['轉介'] || []);
+
+        document.getElementById('recordModal').classList.add('show');
+    }
+
+    // 複製紀錄 (載入資料但不帶 RecordId，儲存時會建立新紀錄)
+    function copyRecord(recordId) {
+        const record = allRecords.find(r => r.RecordId === recordId);
+        if (!record) {
+            showToast('找不到該筆紀錄', 'error');
+            return;
+        }
+
+        // 設定 Modal 標題
+        document.getElementById('recordModalTitle').textContent = '複製服務紀錄';
+
+        // 重要：不設定 recordId，這樣儲存時會建立新紀錄
+        document.getElementById('recordId').value = '';
+
+        // 服務日期預設為今天
+        document.getElementById('服務日期').value = formatDateForInput(new Date());
+
+        // 填入原紀錄資料
+        document.getElementById('個案姓名').value = record['個案姓名'] || '';
+        document.getElementById('個案性別').value = record['個案性別'] || '';
+        document.getElementById('個案身分').value = record['個案身分'] || '';
+        _originalRawNationality = record['個案國籍'] || '';
+        _nationalityManuallyChanged = false;
+        isLoadingData = true;
+        loadSingleFieldValue('個案國籍', record['個案國籍'] || '');
+        isLoadingData = false;
+        document.getElementById('個案來源').value = record['個案來源'] || '';
+        document.getElementById('有無在案').value = record['有無在案'] ? 'true' : 'false';
+        document.getElementById('在案社工').value = record['在案社工'] || '';
+        document.getElementById('服務社工').value = record['服務社工'] || '';
+        document.getElementById('服務方式').value = record['服務方式'] || '';
+        document.getElementById('服務項目').value = record['服務項目'] || '';
+
+        // 服務項目=陪同出庭 → 鎖定服務方式為面談 + 隱藏聯繫
+        const isCourtAttendance2 = record['服務項目'] === '陪同出庭';
+        document.getElementById('服務方式').disabled = isCourtAttendance2;
+        const contactGroup2 = document.getElementById('聯繫FormGroup');
+        if (contactGroup2) contactGroup2.style.display = isCourtAttendance2 ? 'none' : '';
+
+        // 使用單選階層式欄位設值函數
+        loadSingleFieldValue('服務主題', record['服務主題'] || '');
+        loadSingleFieldValue('暴力類型', record['暴力類型'] || '');
+        loadSingleFieldValue('接受轉介項目', record['接受轉介項目'] || '');
+        loadSingleFieldValue('轉案股別單位', record['轉案股別/單位'] || '');
+
+        // 顯示/隱藏在案社工
+        document.getElementById('在案社工Group').style.display = record['有無在案'] ? 'block' : 'none';
+
+        // 顯示/隱藏接受轉介項目和轉案股別
+        const isReferral2 = (record['個案來源'] || '').startsWith('接受轉介');
+        const refGroup2 = document.getElementById('接受轉介項目Group');
+        const transGroup2 = document.getElementById('轉案股別單位Group');
+        if (refGroup2) refGroup2.style.display = isReferral2 ? 'block' : 'none';
+        if (transGroup2) transGroup2.style.display = isReferral2 ? 'block' : 'none';
+
+        // 填入多選欄位 (checkbox)
+        const multiFields = ['陪同出庭', '人身安全', '會談服務', '法律服務', '通報'];
+        multiFields.forEach(field => {
+            let values = record[field] || [];
+            if (typeof values === 'string') {
+                values = values.split(';').map(s => s.trim()).filter(Boolean);
+            }
+            const trimmedValues = values.map(v => String(v).trim());
+            document.querySelectorAll(`#${field}-checkboxes input[type="checkbox"]`).forEach(cb => {
+                cb.checked = trimmedValues.includes(cb.value.trim());
+            });
+        });
+
+        // 載入階層式欄位 (聯繫、轉介)
+        loadHierarchicalValues('聯繫', record['聯繫'] || []);
+        loadHierarchicalValues('轉介', record['轉介'] || []);
+
+        document.getElementById('recordModal').classList.add('show');
+
+        showToast('已複製紀錄，修改後點擊儲存即可建立新紀錄', 'info');
+    }
+    // 預覽面板變更追蹤
+    let currentPreviewId = null;  // 追蹤目前展開的紀錄
+    let previewHasChanges = false;
+    let originalPreviewData = {};
+    let isLoadingPreview = false; // 載入預覽資料時暫停變更偵測
+
+    // --- 國籍欄位原始值追蹤 (避免儲存時自動轉換舊格式) ---
+    let _originalRawNationality = '';         // 編輯 Modal 的原始後端值
+    let _previewOriginalRawNationality = '';  // 預覽面板的原始後端值
+    let _nationalityManuallyChanged = false;         // 編輯 Modal 是否手動改過
+    let _previewNationalityManuallyChanged = false;  // 預覽面板是否手動改過
+    let isLoadingData = false; // 通用資料載入旗標 (載入時不觸發手動變更偵測)
+
+    function showPreview(recordId) {
+        const record = allRecords.find(r => r.RecordId === recordId);
+        if (!record) return;
+
+        const placeholder = document.querySelector('.preview-placeholder');
+        const previewContent = document.getElementById('previewContent');
+
+        // 如果有未儲存變更，詢問是否捨棄
+        if (previewHasChanges && currentPreviewId !== recordId) {
+            if (!confirm('目前有未儲存的變更，確定要切換到其他紀錄嗎？')) {
+                return;
+            }
+            resetPreviewChanges();
+        }
+
+        // 如果點擊同一列，不收起（改為直接顯示）
+        if (currentPreviewId === recordId) {
+            return; // 已經在顯示中
+        }
+
+        // 展開新的預覽
+        currentPreviewId = recordId;
+
+        // 標記選中的列
+        document.querySelectorAll('.records-table tbody tr').forEach(tr => {
+            tr.classList.toggle('selected', tr.dataset.recordId === recordId);
+        });
+
+        // 顯示預覽內容
+        placeholder.style.display = 'none';
+        previewContent.style.display = 'block';
+
+        // 進入專注模式
+        toggleFocusMode(true);
+
+        // 儲存 RecordId
+        document.getElementById('previewRecordId').value = recordId;
+
+        // 初始化預覽面板的下拉選單
+        initPreviewDropdowns();
+
+        // 載入時暫停變更偵測
+        isLoadingPreview = true;
+        isLoadingData = true;
+
+        // 填入可編輯欄位
+        document.getElementById('preview服務日期').value = formatDateForInput(new Date(record['服務日期'])) || '';
+        document.getElementById('preview個案姓名').value = record['個案姓名'] || '';
+        document.getElementById('preview個案性別').value = record['個案性別'] || '';
+        document.getElementById('preview個案身分').value = record['個案身分'] || '';
+        document.getElementById('preview個案來源').value = record['個案來源'] || '';
+        document.getElementById('preview服務項目').value = record['服務項目'] || '';
+
+        // 階層式單選欄位
+        _previewOriginalRawNationality = record['個案國籍'] || '';
+        _previewNationalityManuallyChanged = false;
+        loadSingleFieldValue('preview個案國籍', record['個案國籍']);
+        document.getElementById('preview有無在案').value = record['有無在案'] ? 'true' : 'false';
+        document.getElementById('preview在案社工').value = record['在案社工'] || '';
+
+        // 在案社工 (條件顯示)
+        togglePreviewCaseWorker();
+
+        // 填入服務資訊
+        document.getElementById('preview服務社工').value = record['服務社工'] || '';
+        document.getElementById('preview服務方式').value = record['服務方式'] || '';
+        // 確保預覽的下拉選單中有該選項
+        ensureOptionExists('preview服務主題', record['服務主題']);
+        ensureOptionExists('preview暴力類型', record['暴力類型']);
+        ensureOptionExists('preview接受轉介項目', record['接受轉介項目']);
+        ensureOptionExists('preview轉案股別單位', record['轉案股別/單位']);
+
+        document.getElementById('preview服務主題').value = record['服務主題'] || '';
+        document.getElementById('preview暴力類型').value = record['暴力類型'] || '';
+        document.getElementById('preview接受轉介項目').value = record['接受轉介項目'] || '';
+        document.getElementById('preview轉案股別單位').value = record['轉案股別/單位'] || '';
+
+        // 填入多選欄位 (服務內容 - 唯讀)
+        const multiFields = ['陪同出庭', '人身安全', '會談服務', '法律服務', '聯繫', '轉介', '通報'];
+        multiFields.forEach(field => {
+            const container = document.getElementById('preview' + field);
+            let values = record[field] || [];
+            if (typeof values === 'string') {
+                values = values.split(';').map(s => s.trim()).filter(Boolean);
+            }
+            container.innerHTML = renderMultiSelectTags(values);
+        });
+
+        // 儲存原始資料用於比對
+        saveOriginalPreviewData();
+
+        // 重設變更狀態
+        resetPreviewChanges();
+
+        // 載入完成，恢復變更偵測
+        setTimeout(() => { isLoadingPreview = false; isLoadingData = false; }, 200);
+    }
+
+    // 初始化預覽面板下拉選單
+    function initPreviewDropdowns() {
+        // 基本欄位 (排除階層式的個案國籍)
+        const selectFields = ['個案性別', '個案身分', '個案來源', '服務項目', '服務社工', '服務方式'];
+        selectFields.forEach(field => {
+            const select = document.getElementById('preview' + field);
+            if (!select || select.options.length > 1) return; // 已初始化
+
+            select.innerHTML = '<option value="">請選擇</option>';
+            const options = allOptions[field] || []; // 移除在案社工特殊處理
+            options.filter(opt => opt !== '系統管理員').forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt;
+                option.textContent = (emojiMap[field] && emojiMap[field][opt]) || opt;
+                select.appendChild(option);
+            });
+        });
+
+        // 階層式欄位 (將所有選項平面化呈現)
+        const hierarchicalFields = [
+            { preview: '服務主題', source: '服務主題' },
+            { preview: '暴力類型', source: '暴力類型' },
+            { preview: '接受轉介項目', source: '接受轉介項目' },
+            { preview: '轉案股別單位', source: '轉案股別/單位' }
+        ];
+
+        hierarchicalFields.forEach(fieldInfo => {
+            const select = document.getElementById('preview' + fieldInfo.preview);
+            if (!select || select.options.length > 1) return; // 已初始化
+
+            select.innerHTML = '<option value="">請選擇</option>';
+            const options = allOptions[fieldInfo.source] || [];
+            options.forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt;
+                option.textContent = opt;
+                select.appendChild(option);
+            });
+        });
+    }
+
+    // 確保下拉選單中有指定的值 (如果沒有則新增)
+    function ensureOptionExists(elementId, value) {
+        if (!value) return;
+        const select = document.getElementById(elementId);
+        if (!select) return;
+
+        // 檢查是否存在
+        let exists = false;
+        for (let i = 0; i < select.options.length; i++) {
+            if (select.options[i].value === value) {
+                exists = true;
+                break;
+            }
+        }
+
+        // 不存在則新增
+        if (!exists) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            select.appendChild(option);
+        }
+    }
+
+    // 儲存原始預覽資料
+    function saveOriginalPreviewData() {
+        originalPreviewData = {
+            '服務日期': document.getElementById('preview服務日期').value,
+            '個案姓名': document.getElementById('preview個案姓名').value,
+            '個案性別': document.getElementById('preview個案性別').value,
+            '個案身分': document.getElementById('preview個案身分').value,
+            '個案國籍': getSingleFieldValue('preview個案國籍'),
+            '個案來源': document.getElementById('preview個案來源').value,
+            '服務項目': document.getElementById('preview服務項目').value,
+            '有無在案': document.getElementById('preview有無在案').value,
+            '在案社工': document.getElementById('preview在案社工').value,
+            '服務社工': document.getElementById('preview服務社工').value,
+            '服務方式': document.getElementById('preview服務方式').value,
+            '服務主題': document.getElementById('preview服務主題').value,
+            '暴力類型': document.getElementById('preview暴力類型').value,
+            '接受轉介項目': document.getElementById('preview接受轉介項目').value,
+            '轉案股別單位': document.getElementById('preview轉案股別單位').value
+        };
+    }
+
+    // 標記預覽面板已變更
+    function markPreviewChanged() {
+        if (isLoadingPreview) return; // 載入中不觸發
+        previewHasChanges = true;
+        document.getElementById('unsavedIndicator').classList.remove('hidden');
+    }
+
+    // 重設變更狀態
+    function resetPreviewChanges() {
+        previewHasChanges = false;
+        document.getElementById('unsavedIndicator').classList.add('hidden');
+    }
+
+    // 切換在案社工顯示
+    function togglePreviewCaseWorker() {
+        const hasCase = document.getElementById('preview有無在案').value === 'true';
+        document.getElementById('preview在案社工Row').style.display = hasCase ? 'flex' : 'none';
+    }
+
+    // 儲存預覽面板變更
+    function savePreviewChanges() {
+        const recordId = document.getElementById('previewRecordId').value;
+        if (!recordId) {
+            showToast('無法找到紀錄ID', 'error');
+            return;
+        }
+
+        // 驗證必填欄位
+        const requiredFields = [
+            { id: 'preview服務日期', name: '服務日期' },
+            { id: 'preview個案姓名', name: '個案姓名' },
+            { id: 'preview個案性別', name: '個案性別' },
+            { id: 'preview個案身分', name: '個案身分' },
+            { id: 'preview個案國籍', name: '個案國籍' },
+            { id: 'preview個案來源', name: '個案來源' },
+            { id: 'preview服務項目', name: '服務項目' },
+            { id: 'preview服務社工', name: '服務社工' },
+            { id: 'preview服務方式', name: '服務方式' },
+            { id: 'preview暴力類型', name: '暴力類型' },
+            { id: 'preview服務主題', name: '服務主題' }
+        ];
+
+        const missingFields = [];
+        requiredFields.forEach(field => {
+            const element = document.getElementById(field.id);
+            if (!element || !element.value || element.value.trim() === '') {
+                missingFields.push(field.name);
+                // 標記欄位為錯誤狀態
+                if (element) {
+                    element.style.borderColor = '#e74c3c';
+                    element.style.boxShadow = '0 0 0 3px rgba(231, 76, 60, 0.15)';
+                }
+            } else {
+                // 清除錯誤狀態
+                if (element) {
+                    element.style.borderColor = '';
+                    element.style.boxShadow = '';
+                }
+            }
+        });
+
+        if (missingFields.length > 0) {
+            showToast(`請填寫必填欄位：${missingFields.join('、')}`, 'error');
+            return;
+        }
+
+        // 收集資料
+        const recordData = {
+            '服務日期': document.getElementById('preview服務日期').value,
+            '個案姓名': document.getElementById('preview個案姓名').value,
+            '個案性別': document.getElementById('preview個案性別').value,
+            '個案身分': document.getElementById('preview個案身分').value,
+            '個案國籍': _previewNationalityManuallyChanged ? getSingleFieldValue('preview個案國籍') : _previewOriginalRawNationality,
+            '個案來源': document.getElementById('preview個案來源').value,
+            '服務項目': document.getElementById('preview服務項目').value,
+            '有無在案': document.getElementById('preview有無在案').value === 'true',
+            '在案社工': document.getElementById('preview在案社工').value,
+            '服務社工': document.getElementById('preview服務社工').value,
+            '服務方式': document.getElementById('preview服務方式').value,
+            '服務主題': document.getElementById('preview服務主題').value,
+            '暴力類型': document.getElementById('preview暴力類型').value,
+            '接受轉介項目': document.getElementById('preview接受轉介項目').value,
+            '轉案股別/單位': document.getElementById('preview轉案股別單位').value
+        };
+
+        // 保留原有的多選欄位資料
+        const originalRecord = allRecords.find(r => r.RecordId === recordId);
+        if (originalRecord) {
+            const multiFields = ['陪同出庭', '人身安全', '會談服務', '法律服務', '聯繫', '轉介', '通報'];
+            multiFields.forEach(field => {
+                recordData[field] = originalRecord[field];
+            });
+        }
+
+        showLoading();
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                showToast(result.message, 'success');
+                resetPreviewChanges();
+                // 更新本地資料
+                const idx = allRecords.findIndex(r => r.RecordId === recordId);
+                if (idx !== -1) {
+                    Object.assign(allRecords[idx], recordData);
+                }
+                // 重新渲染表格
+                renderRecordsTable();
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('儲存失敗: ' + error.message, 'error');
+            })
+            .updateRecord(recordId, recordData);
+    }
+
+    // 捨棄預覽面板變更
+    function discardPreviewChanges() {
+        if (previewHasChanges) {
+            if (!confirm('確定要捨棄所有變更嗎？')) return;
+        }
+
+        // 恢復正常模式：關閉預覽面板、退出專注模式
+        previewHasChanges = false;
+        document.getElementById('unsavedIndicator').classList.add('hidden');
+        const placeholder = document.querySelector('.preview-placeholder');
+        const previewContent = document.getElementById('previewContent');
+        if (placeholder) placeholder.style.display = 'flex';
+        if (previewContent) previewContent.style.display = 'none';
+        document.querySelectorAll('#recordsTableBody tr').forEach(row => row.classList.remove('selected'));
+        if (typeof toggleFocusMode === 'function') {
+            toggleFocusMode(false);
+        }
+    }
+
+    function renderMultiSelectTags(values) {
+        if (!values || values.length === 0) {
+            return '<span class="preview-tag empty">無</span>';
+        }
+        return values.map(v => `<span class="preview-tag">${v}</span>`).join('');
+    }
+
+    function closeRecordModal() {
+        document.getElementById('recordModal').classList.remove('show');
+    }
+
+    function saveRecord() {
+        // 驗證
+        const form = document.getElementById('recordForm');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        // 檢查階層式必填欄位
+        const hierarchicalRequired = [
+            { field: '服務主題', label: '服務主題' },
+            { field: '暴力類型', label: '暴力類型' }
+        ];
+        const missingHierarchical = [];
+        hierarchicalRequired.forEach(({ field, label }) => {
+            const val = getSingleFieldValue(field);
+            if (!val || val.trim() === '') {
+                missingHierarchical.push(label);
+            }
+        });
+        if (missingHierarchical.length > 0) {
+            showToast(`請填寫必填欄位：${missingHierarchical.join('、')}`, 'error');
+            return;
+        }
+
+        // 收集資料
+        const recordData = {
+            '服務日期': document.getElementById('服務日期').value,
+            '個案姓名': document.getElementById('個案姓名').value,
+            '個案性別': document.getElementById('個案性別').value,
+            '個案身分': document.getElementById('個案身分').value,
+            '個案國籍': _nationalityManuallyChanged ? getSingleFieldValue('個案國籍') : (_originalRawNationality || getSingleFieldValue('個案國籍')),
+            '個案來源': document.getElementById('個案來源').value,
+            '有無在案': document.getElementById('有無在案').value === 'true',
+            '在案社工': document.getElementById('在案社工').value,
+            '服務社工': document.getElementById('服務社工').value,
+            '服務方式': document.getElementById('服務方式').value,
+            '服務項目': document.getElementById('服務項目').value,
+            // 使用單選階層式欄位取值函數
+            '服務主題': getSingleFieldValue('服務主題'),
+            '暴力類型': getSingleFieldValue('暴力類型'),
+            '接受轉介項目': getSingleFieldValue('接受轉介項目'),
+            '轉案股別/單位': getSingleFieldValue('轉案股別單位')
+        };
+
+        // 多選欄位 (checkbox)
+        const multiFields = ['陪同出庭', '人身安全', '會談服務', '法律服務', '通報'];
+        multiFields.forEach(field => {
+            const checked = [];
+            document.querySelectorAll(`#${field}-checkboxes input[type="checkbox"]:checked`).forEach(cb => {
+                checked.push(cb.value);
+            });
+            recordData[field] = checked;
+        });
+
+        // 階層式欄位 (聯繫、轉介)
+        recordData['聯繫'] = selectedHierarchicalValues['聯繫'];
+        recordData['轉介'] = selectedHierarchicalValues['轉介'];
+
+        showLoading();
+
+        const recordId = document.getElementById('recordId').value;
+
+        if (recordId) {
+            // 更新
+            google.script.run
+                .withSuccessHandler(function (result) {
+                    hideLoading();
+                    closeRecordModal();
+                    showToast(result.message, 'success');
+                    // 只在有篩選條件時才重新載入
+                    const filters = getFilters();
+                    if (filters.year || filters['個案姓名']) {
+                        loadRecords();
+                    }
+                })
+                .withFailureHandler(function (error) {
+                    hideLoading();
+                    showToast('更新失敗: ' + error.message, 'error');
+                })
+                .updateRecord(recordId, recordData);
+        } else {
+            // 新增
+            google.script.run
+                .withSuccessHandler(function (result) {
+                    hideLoading();
+                    closeRecordModal();
+                    showToast(result.message + ' (請使用查詢條件查看)', 'success');
+                    // 不自動載入所有資料，提示使用者使用查詢
+                    // 如果有篩選條件，才重新載入
+                    const filters = getFilters();
+                    if (filters.year || filters['個案姓名']) {
+                        loadRecords();
+                    } else {
+                        showEmptyMessage('新增成功！請選擇查詢條件後點擊「查詢」查看紀錄');
+                    }
+                })
+                .withFailureHandler(function (error) {
+                    hideLoading();
+                    showToast('新增失敗: ' + error.message, 'error');
+                })
+                .createRecord(recordData);
+        }
+    }
+
+    // ==================== 刪除紀錄 ====================
+    let deleteRecordId = null;
+
+    function confirmDeleteRecord(recordId) {
+        deleteRecordId = recordId;
+        document.getElementById('confirmTitle').textContent = '確認刪除';
+        document.getElementById('confirmMessage').textContent = '確定要刪除此筆紀錄嗎？此操作無法復原。';
+        document.getElementById('confirmBtn').onclick = doDeleteRecord;
+        document.getElementById('confirmModal').classList.add('show');
+    }
+
+    function doDeleteRecord() {
+        if (!deleteRecordId) return;
+
+        // 先保存 ID 到區域變數，因為 closeConfirmModal 會把 deleteRecordId 設為 null
+        const recordIdToDelete = deleteRecordId;
+
+        showLoading();
+        closeConfirmModal();
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                showToast(result.message, 'success');
+                // 只在有篩選條件時才重新載入
+                const filters = getFilters();
+                if (filters.year || filters['個案姓名']) {
+                    loadRecords();
+                }
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('刪除失敗: ' + error.message, 'error');
+            })
+            .deleteRecord(recordIdToDelete);  // 使用區域變數
+    }
+
+    function closeConfirmModal() {
+        document.getElementById('confirmModal').classList.remove('show');
+        deleteRecordId = null;
+    }
+
+    // ==================== 匯出功能 ====================
+    function exportToExcel() {
+        showLoading();
+
+        const filters = getFilters();
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                showToast(`匯出成功！共 ${result.recordCount} 筆紀錄`, 'success');
+                window.open(result.url, '_blank');
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('匯出失敗: ' + error.message, 'error');
+            })
+            .exportToExcel(filters);
+    }
+
+    function exportToPdf() {
+        showLoading();
+
+        const filters = getFilters();
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                showToast(`匯出成功！共 ${result.recordCount} 筆紀錄`, 'success');
+                window.open(result.url, '_blank');
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('匯出失敗: ' + error.message, 'error');
+            })
+            .exportToPdf(filters);
+    }
+
+    // ==================== 使用者管理 (管理員) ====================
+    function loadUsers() {
+        google.script.run
+            .withSuccessHandler(function (users) {
+                renderUsersTable(users);
+            })
+            .withFailureHandler(function (error) {
+                showToast('載入使用者失敗: ' + error.message, 'error');
+            })
+            .getAllUsers();
+    }
+
+    function renderUsersTable(users) {
+        const tbody = document.getElementById('usersTableBody');
+
+        // 防禦性檢查
+        if (!users || !Array.isArray(users)) {
+            console.warn('收到無效的使用者資料:', users);
+            users = [];
+        }
+
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-message">尚無使用者</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = users.map(user => `
+    <tr>
+      <td>${user.email}</td>
+      <td>${user.name || ''}</td>
+      <td>${user.role === 'admin' ? '管理者' : '使用者'}</td>
+      <td>${user.status}</td>
+      <td>
+        <button class="btn btn-info btn-sm" onclick="toggleUserStatus('${user.email}', '${user.status === '啟用' ? '停用' : '啟用'}')">
+          ${user.status === '啟用' ? '🔒 停用' : '🔓 啟用'}
+        </button>
+      </td>
+    </tr>
+  `).join('');
+    }
+
+    function openAddUserModal() {
+        document.getElementById('userForm').reset();
+        document.getElementById('userModal').classList.add('show');
+    }
+
+    function closeUserModal() {
+        document.getElementById('userModal').classList.remove('show');
+    }
+
+    function saveUser() {
+        const email = document.getElementById('userEmail').value;
+        const name = document.getElementById('userName').value;
+        const role = document.getElementById('userRole').value;
+
+        if (!email) {
+            showToast('請填寫 Email', 'error');
+            return;
+        }
+
+        showLoading();
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                closeUserModal();
+                showToast(result.message, 'success');
+                loadUsers();
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('新增失敗: ' + error.message, 'error');
+            })
+            .addUser({ email: email, name: name, role: role });
+    }
+
+    function toggleUserStatus(email, newStatus) {
+        showLoading();
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                showToast(result.message, 'success');
+                loadUsers();
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('更新失敗: ' + error.message, 'error');
+            })
+            .updateUser(email, { status: newStatus });
+    }
+
+    // ==================== UI 輔助函數 ====================
+    function showLoading() {
+        document.getElementById('loadingOverlay').classList.remove('hidden');
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+    }
+
+    function showToast(message, type) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = 'toast ' + type + ' show';
+
+        setTimeout(function () {
+            toast.classList.remove('show');
+        }, 3000);
+    }
+
+    function formatDate(dateValue) {
+        if (!dateValue) return '';
+        const date = new Date(dateValue);
+        if (isNaN(date.getTime())) return '';
+
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    function formatDateForInput(date) {
+        if (!date || isNaN(date.getTime())) return '';
+
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    // ==================== 統計報表功能 ====================
+    let currentReportHtml = '';
+
+    function generateReport() {
+        const yearSelect = document.getElementById('statsYear');
+        const monthSelect = document.getElementById('statsMonth');
+
+        if (!yearSelect.value) {
+            showToast('請選擇年份', 'warning');
+            return;
+        }
+
+        const year = parseInt(yearSelect.value);
+        const month = monthSelect.value;
+
+        // 顯示載入中
+        document.getElementById('statsReportContainer').style.display = 'none';
+        document.getElementById('statsLoading').style.display = 'flex';
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                document.getElementById('statsLoading').style.display = 'none';
+                document.getElementById('statsReportContainer').style.display = 'block';
+
+                if (result && result.html) {
+                    currentReportHtml = result.html;
+
+                    // 使用 iframe 顯示報表
+                    const container = document.getElementById('statsReportContainer');
+                    container.innerHTML = '<div class="stats-report-content"><iframe id="reportFrame"></iframe></div>';
+
+                    const iframe = document.getElementById('reportFrame');
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    iframeDoc.open();
+                    iframeDoc.write(result.html);
+                    iframeDoc.close();
+
+                    // 自動調整 iframe 高度
+                    iframe.onload = function () {
+                        try {
+                            iframe.style.height = (iframeDoc.body.scrollHeight + 50) + 'px';
+                        } catch (e) {
+                            iframe.style.height = '1200px';
+                        }
+                    };
+
+                    showToast('報表產生成功！共 ' + result.totalCount + ' 筆資料', 'success');
+                } else {
+                    document.getElementById('statsReportContainer').innerHTML =
+                        '<div class="stats-placeholder"><span>📊</span><p>沒有符合條件的資料</p></div>';
+                }
+            })
+            .withFailureHandler(function (error) {
+                document.getElementById('statsLoading').style.display = 'none';
+                document.getElementById('statsReportContainer').style.display = 'block';
+                document.getElementById('statsReportContainer').innerHTML =
+                    '<div class="stats-placeholder"><span>❌</span><p>報表產生失敗: ' + error.message + '</p></div>';
+                showToast('報表產生失敗: ' + error.message, 'error');
+            })
+            .generateStatisticsReport(year, month);
+    }
+
+    function printReport() {
+        const iframe = document.getElementById('reportFrame');
+        if (!iframe) {
+            showToast('請先產生報表', 'warning');
+            return;
+        }
+
+        try {
+            const iframeWindow = iframe.contentWindow;
+            iframeWindow.focus();
+            iframeWindow.print();
+        } catch (e) {
+            // 如果無法直接列印 iframe，開啟新視窗
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(currentReportHtml);
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+        }
+    }
+
+    function exportReportToExcel() {
+        const yearSelect = document.getElementById('statsYear');
+        const monthSelect = document.getElementById('statsMonth');
+
+        if (!yearSelect.value) {
+            showToast('請選擇年份', 'warning');
+            return;
+        }
+
+        const year = parseInt(yearSelect.value);
+        const month = monthSelect.value;
+
+        showLoading();
+        showToast('正在產生 Excel 檔案，請稍候...', 'info');
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                if (result && result.url) {
+                    showToast('Excel 檔案已建立！正在開啟...', 'success');
+                    window.open(result.url, '_blank');
+                } else {
+                    showToast('匯出失敗', 'error');
+                }
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('匯出失敗: ' + error.message, 'error');
+            })
+            .exportStatisticsToExcel(year, month);
+    }
+
+    function exportAnnualReport() {
+        const yearSelect = document.getElementById('statsYear');
+
+        if (!yearSelect.value) {
+            showToast('請選擇年份', 'warning');
+            return;
+        }
+
+        const year = parseInt(yearSelect.value);
+        const rocYear = year - 1911;
+
+        showLoading();
+        showToast(`正在產生 ${rocYear} 年年報，請稍候...`, 'info');
+
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                if (result && result.url) {
+                    showToast(`年報「${result.name}」已建立！正在開啟...`, 'success');
+                    window.open(result.url, '_blank');
+                } else {
+                    showToast('匯出年報失敗', 'error');
+                }
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('匯出年報失敗: ' + error.message, 'error');
+            })
+            .exportAnnualReport(rocYear);
+    }
+
+    function setupFormEvents() {
+        const hasCaseSelect = document.getElementById('有無在案');
+        if (hasCaseSelect) {
+            hasCaseSelect.addEventListener('change', function () {
+                const isCase = this.value === 'true';
+                const group = document.getElementById('在案社工Group');
+                if (group) {
+                    group.style.display = isCase ? 'block' : 'none';
+                }
+            });
+        }
+
+        // 個案來源 變更 → 條件顯示接受轉介項目/轉案股別
+        const sourceSelect = document.getElementById('個案來源');
+        if (sourceSelect) {
+            sourceSelect.addEventListener('change', function () {
+                const isReferral = this.value.startsWith('接受轉介');
+                const refGroup = document.getElementById('接受轉介項目Group');
+                const transGroup = document.getElementById('轉案股別單位Group');
+                if (refGroup) refGroup.style.display = isReferral ? 'block' : 'none';
+                if (transGroup) transGroup.style.display = isReferral ? 'block' : 'none';
+                // 非接受轉介時清空已選值
+                if (!isReferral) {
+                    clearSingleFieldValue('接受轉介項目');
+                    clearSingleFieldValue('轉案股別單位');
+                }
+            });
+        }
+
+        // 服務項目 變更 → 陪同出庭時鎖定服務方式為面談，且隱藏聯繫欄位
+        const serviceItemSelect = document.getElementById('服務項目');
+        const serviceMethodSelect = document.getElementById('服務方式');
+        if (serviceItemSelect && serviceMethodSelect) {
+            serviceItemSelect.addEventListener('change', function () {
+                const isCourtAttendance = this.value === '陪同出庭';
+                if (isCourtAttendance) {
+                    // 鎖定為面談
+                    serviceMethodSelect.value = '面談';
+                    serviceMethodSelect.disabled = true;
+                } else {
+                    serviceMethodSelect.disabled = false;
+                }
+                // 陪同出庭時隱藏聯繫欄位
+                const contactGroup = document.getElementById('聯繫FormGroup');
+                if (contactGroup) contactGroup.style.display = isCourtAttendance ? 'none' : '';
+            });
+        }
+    }
+    // ==================== 系統管理功能 ====================
+
+    // --- 使用者管理 ---
+    function loadUsers() {
+        showLoading();
+        google.script.run
+            .withSuccessHandler(function (users) {
+                renderUsersTable(users);
+                hideLoading();
+            })
+            .withFailureHandler(function (err) {
+                hideLoading();
+                showToast('載入使用者失敗: ' + err.message, 'error');
+            })
+            .getAllUsers();
+    }
+
+    function renderUsersTable(users) {
+        const tbody = document.getElementById('usersTableBody');
+        tbody.innerHTML = '';
+        users.forEach(user => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${user.email}</td>
+                <td>${user.name}</td>
+                <td>${user.role === 'admin' ? '管理者' : '使用者'}</td>
+                <td>${user.status}</td>
+                <td>
+                    <button class="btn-icon" onclick="editUser('${user.email}', '${user.name}', '${user.role}', '${user.status}')" title="編輯">✏️</button>
+                    <button class="btn-icon delete" onclick="deleteUser('${user.email}')" title="刪除">🗑️</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Modal state
+    let isEditingUser = false;
+
+    function openAddUserModal() {
+        isEditingUser = false;
+        document.getElementById('userForm').reset();
+        document.getElementById('userEmail').disabled = false;
+        document.getElementById('userModal').classList.add('show');
+    }
+
+    function editUser(email, name, role, status) {
+        isEditingUser = true;
+        document.getElementById('userEmail').value = email;
+        document.getElementById('userEmail').disabled = true; // Email holds ID
+        document.getElementById('userName').value = name;
+        document.getElementById('userRole').value = role;
+        document.getElementById('userModal').classList.add('show');
+    }
+
+    function closeUserModal() {
+        document.getElementById('userModal').classList.remove('show');
+    }
+
+    function saveUser() {
+        const email = document.getElementById('userEmail').value;
+        const name = document.getElementById('userName').value;
+        const role = document.getElementById('userRole').value;
+
+        if (!email || !role || !name) {
+            showToast('請填寫完整資訊', 'warning');
+            return;
+        }
+
+        const userData = { email, name, role };
+
+        showLoading();
+        if (isEditingUser) {
+            // Update status implied from edit? Or just update fields. 
+            // Current editUser doesn't set status.
+            // If we want to change status, we need input.
+            // But simple edit usually assumes active.
+            userData.status = '啟用'; // Default or keep existing? Backend only updates if provided.
+            // Wait, backend `updateUser` updates provided fields.
+            // If I don't provide status, it keeps existing.
+
+            google.script.run
+                .withSuccessHandler(() => {
+                    hideLoading();
+                    closeUserModal();
+                    showToast('更新成功', 'success');
+                    loadUsers();
+                })
+                .withFailureHandler(err => {
+                    hideLoading();
+                    showToast('更新失敗: ' + err.message, 'error');
+                })
+                .updateUser(email, userData);
+        } else {
+            google.script.run
+                .withSuccessHandler(() => {
+                    hideLoading();
+                    closeUserModal();
+                    showToast('新增成功', 'success');
+                    loadUsers();
+                })
+                .withFailureHandler(err => {
+                    hideLoading();
+                    showToast('新增失敗: ' + err.message, 'error');
+                })
+                .addUser(userData);
+        }
+    }
+
+    function deleteUser(email) {
+        if (!confirm('確定要刪除此使用者嗎？')) return;
+        showLoading();
+        google.script.run
+            .withSuccessHandler(() => {
+                hideLoading();
+                showToast('刪除成功', 'success');
+                loadUsers();
+            })
+            .withFailureHandler(err => {
+                hideLoading();
+                showToast('刪除失敗: ' + err.message, 'error');
+            })
+            .deleteUser(email);
+    }
+
+
+    function clearSystemCache() {
+        if (!confirm('確定要清除系統快取嗎？\n這將會強制重新載入所有最新資料，可能會稍微影響查詢速度。')) return;
+
+        showLoading();
+        google.script.run
+            .withSuccessHandler(function () {
+                hideLoading();
+                showToast('✅ 系統快取已清除', 'success');
+                // 重新載入當前頁面資料
+                if (typeof loadRecords === 'function') {
+                    loadRecords();
+                }
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('❌ 清除失敗: ' + error.message, 'error');
+            })
+            .clearRecordsCache();
+    }
+
+
+    // ==================== 服務社工管理 ====================
+
+    function loadSocialWorkerSettings() {
+        const container = document.getElementById('socialWorkerList');
+        if (!container) return;
+
+        container.innerHTML = '<p class="text-muted">載入中...</p>';
+
+        google.script.run
+            .withSuccessHandler(function (settings) {
+                renderSocialWorkerList(settings);
+            })
+            .withFailureHandler(function (error) {
+                container.innerHTML = '<p class="text-danger">載入失敗: ' + error.message + '</p>';
+                showToast('載入社工設定失敗: ' + error.message, 'error');
+            })
+            .getSocialWorkerSettings();
+    }
+
+    function renderSocialWorkerList(settings) {
+        const container = document.getElementById('socialWorkerList');
+        if (!container) return;
+
+        if (!settings || settings.length === 0) {
+            container.innerHTML = '<p class="text-muted">尚無資料</p>';
+            return;
+        }
+
+        container.style.display = 'grid';
+        container.style.gridTemplateColumns = 'repeat(auto-fill, minmax(200px, 1fr))';
+        container.style.gap = '10px';
+
+        container.innerHTML = settings.map(worker => {
+            let badge = '';
+            let deleteBtn = ''; // 初始化變數
+            if (worker.source === 'system') {
+                badge = '<span class="role-badge admin" style="margin-left:5px; font-size: 0.7rem;">系統</span>';
+            } else if (worker.source === 'system_managed') {
+                badge = '<span class="role-badge admin" style="margin-left:5px; font-size: 0.7rem; opacity: 0.7;">系統(已隱藏)</span>';
+            } else {
+                badge = '<span class="role-badge" style="background:#95a5a6; color:white; margin-left:5px; font-size: 0.7rem;">外部</span>';
+                // 只有手動新增的可以刪除
+                deleteBtn = `<button class="btn-icon" style="margin-left: auto; color: #e74c3c;" onclick="deleteManualSocialWorker('${worker.name}')" title="刪除此外部社工">🗑️</button>`;
+            }
+
+            return `
+            <div class="checkbox-item social-worker-item" style="display: flex; align-items: center; padding: 5px;">
+                <input type="checkbox" id="sw_${worker.name}" value="${worker.name}" ${worker.isVisible ? 'checked' : ''} style="margin-right: 8px;">
+                <label for="sw_${worker.name}" style="cursor: pointer; display: flex; align-items: center; flex-grow: 1;">${worker.name} ${badge}</label>
+                ${deleteBtn}
+            </div>
+            `;
+        }).join('');
+    }
+
+    function deleteManualSocialWorker(name) {
+        if (!confirm('確定要刪除外部社工「' + name + '」嗎？\n\n注意：這將從選項設定中永久移除此項目。')) {
+            return;
+        }
+
+        showLoading();
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                showToast(result.message, 'success');
+                loadSocialWorkerSettings(); // 刷新列表
+                loadOptions(); // 刷新全域選項
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('刪除失敗: ' + error.message, 'error');
+            })
+            .deleteSocialWorker(name);
+    }
+
+    function saveSocialWorkerSettings() {
+        const checkboxes = document.querySelectorAll('#socialWorkerList input[type="checkbox"]');
+        const settings = [];
+
+        checkboxes.forEach(cb => {
+            settings.push({
+                name: cb.value,
+                isVisible: cb.checked,
+                isNew: cb.dataset.isNew === 'true'
+            });
+        });
+
+        showLoading();
+        google.script.run
+            .withSuccessHandler(function (result) {
+                hideLoading();
+                showToast(result.message, 'success');
+                loadSocialWorkerSettings(); // 重新載入列表以同步狀態
+                loadOptions(); // 重新載入全域選項以更新下拉選單
+            })
+            .withFailureHandler(function (error) {
+                hideLoading();
+                showToast('儲存失敗: ' + error.message, 'error');
+            })
+            .saveSocialWorkerSettings(settings);
+    }
+
+    function openAddSocialWorkerModal() {
+        document.getElementById('newSocialWorkerName').value = '';
+        document.getElementById('socialWorkerModal').classList.add('show');
+        document.getElementById('newSocialWorkerName').focus();
+    }
+
+    function closeSocialWorkerModal() {
+        document.getElementById('socialWorkerModal').classList.remove('show');
+    }
+
+    function addManualSocialWorker() {
+        const nameInput = document.getElementById('newSocialWorkerName');
+        const name = nameInput.value.trim();
+
+        if (!name) {
+            showToast('請輸入姓名', 'warning');
+            return;
+        }
+
+        closeSocialWorkerModal();
+
+        const container = document.getElementById('socialWorkerList');
+
+        // 檢查是否已存在
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        let existing = null;
+        checkboxes.forEach(cb => {
+            if (cb.value === name) existing = cb;
+        });
+
+        if (existing) {
+            existing.checked = true;
+            existing.closest('.social-worker-item').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            showToast('此社工已在列表中，已為您勾選', 'info');
+            return;
+        }
+
+        // 移除「尚無資料」提示
+        if (container.querySelector('.text-muted')) {
+            container.innerHTML = '';
+        }
+
+        const div = document.createElement('div');
+        div.className = 'checkbox-item social-worker-item new-item';
+        div.style.cssText = 'display: flex; align-items: center; padding: 5px; background-color: #f0fdf4; border-radius: 4px;';
+        div.innerHTML = `
+            <input type="checkbox" id="sw_new_${Date.now()}" value="${name}" checked data-is-new="true" style="margin-right: 8px;">
+            <label for="sw_new_${Date.now()}" style="cursor: pointer; display: flex; align-items: center;">${name} <span class="role-badge" style="background:#27ae60; color:white; margin-left:5px; font-size: 0.7rem;">新外部</span></label>
+        `;
+
+        // 插在最前面
+        container.insertBefore(div, container.firstChild);
+        container.scrollTop = 0;
+
+        showToast('已加入暫存列表，請記得點擊「儲存設定」', 'info');
+    }
+
+</script>

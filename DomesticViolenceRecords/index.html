@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>家暴服務紀錄系統</title>
+  <?!= include('styles'); ?>
+</head>
+
+<body>
+  <!-- 密碼驗證 Modal -->
+  <div id="passwordModal" class="modal" style="display: flex;">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>🔐 系統登入</h2>
+      </div>
+      <div class="modal-body" style="text-align: center;">
+        <p style="margin-bottom: 15px;">請輸入系統密碼以繼續使用</p>
+        <input type="password" id="systemPassword" placeholder="輸入密碼..."
+          style="width: 100%; padding: 12px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; text-align: center;"
+          onkeypress="if(event.key === 'Enter') checkPassword()">
+        <p id="passwordError" style="color: #e74c3c; margin-top: 10px; display: none;">❌ 密碼錯誤，請重新輸入</p>
+      </div>
+      <div class="modal-footer" style="justify-content: center;">
+        <button class="btn btn-primary" onclick="checkPassword()">🔓 登入</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 載入中遮罩 -->
+  <div id="loadingOverlay" class="loading-overlay hidden">
+    <div class="loading-spinner"></div>
+    <p>載入中...</p>
+  </div>
+
+  <!-- 主容器 (側邊欄佈局) -->
+  <div class="app-layout">
+    <!-- 左側側邊欄 -->
+    <aside class="app-sidebar">
+      <div class="sidebar-header">
+        <h1>🏠 家暴服務紀錄系統</h1>
+      </div>
+
+      <!-- 導航選單 -->
+      <nav class="sidebar-nav" id="sidebarNav">
+        <button class="nav-item active" data-tab="records" onclick="switchTab(this, 'records')">
+          <span class="nav-icon">📋</span>
+          <span class="nav-text">服務紀錄</span>
+        </button>
+        <button class="nav-item" data-tab="stats" onclick="switchTab(this, 'stats')">
+          <span class="nav-icon">📊</span>
+          <span class="nav-text">統計報表</span>
+        </button>
+        <button class="nav-item" data-tab="admin" id="adminTab" style="display:none;"
+          onclick="switchTab(this, 'admin')">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-text">系統管理</span>
+        </button>
+      </nav>
+
+      <!-- 使用者資訊 (底部) -->
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <span id="currentUserName">載入中...</span>
+          <span id="currentUserRole" class="role-badge"></span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 右側主內容區 -->
+    <div class="app-main">
+      <!-- 頁籤內容 -->
+      <!-- 服務紀錄頁籤 -->
+      <section id="records-tab" class="tab-panel active">
+        <!-- 專注模式：浮動按鈕區 -->
+        <div class="focus-mode-toolbar">
+          <button class="expand-search-btn" onclick="toggleFocusMode(false)" title="展開搜尋列">
+            🔍
+          </button>
+          <button class="add-record-btn-focus" onclick="openAddRecordModal()" title="新增紀錄">
+            ➕
+          </button>
+          <div class="focus-mode-hint">按 ESC 恢復正常模式</div>
+        </div>
+
+        <!-- 篩選區 -->
+        <div class="filter-section" style="justify-content: center;">
+          <div class="filter-row" style="justify-content: center;">
+            <div class="filter-group">
+              <label>年份</label>
+              <select id="filterYear">
+                <!-- JS 會自動填入年份，預設今年 -->
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>月份</label>
+              <select id="filterMonth">
+                <option value="">全部</option>
+                <option value="1">1月</option>
+                <option value="2">2月</option>
+                <option value="3">3月</option>
+                <option value="4">4月</option>
+                <option value="5">5月</option>
+                <option value="6">6月</option>
+                <option value="7">7月</option>
+                <option value="8">8月</option>
+                <option value="9">9月</option>
+                <option value="10">10月</option>
+                <option value="11">11月</option>
+                <option value="12">12月</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>個案姓名</label>
+              <input type="text" id="filterCaseName" placeholder="輸入關鍵字">
+            </div>
+            <div class="filter-group">
+              <label>服務社工</label>
+              <select id="filterSocialWorker">
+                <option value="">全部</option>
+              </select>
+            </div>
+            <div class="filter-actions">
+              <button class="btn btn-primary" onclick="searchRecords()">🔍 查詢</button>
+              <button class="btn btn-secondary" onclick="resetFilters()">↺ 重設</button>
+              <button class="btn btn-success add-record-btn-normal" onclick="openAddRecordModal()">➕
+                新增紀錄</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export buttons removed -->
+
+        <!-- 紀錄列表與預覽面板容器 -->
+        <div class="records-preview-container">
+          <!-- 左側：表格 -->
+          <div class="records-table-container">
+            <table class="records-table">
+              <thead>
+                <tr>
+                  <th>服務日期</th>
+                  <th>個案姓名</th>
+                  <th>個案身分</th>
+                  <th>服務社工</th>
+                  <th>服務方式</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="recordsTableBody">
+                <tr>
+                  <td colspan="6" class="empty-message">尚無資料，請點擊「新增紀錄」開始</td>
+                </tr>
+              </tbody>
+            </table>
+            <!-- 分頁 (在搜尋結果下方) -->
+            <div class="pagination" id="pagination"></div>
+          </div>
+
+          <!-- 右側：可編輯預覽面板 -->
+          <div class="preview-panel" id="previewPanel">
+            <div class="preview-placeholder">
+              <span>👆</span>
+              <p>點選左側紀錄列即可檢視並編輯詳細內容</p>
+            </div>
+            <div class="preview-content" id="previewContent" style="display:none;">
+              <input type="hidden" id="previewRecordId">
+
+              <!-- 未儲存提示 -->
+              <div class="unsaved-indicator hidden" id="unsavedIndicator">
+                <span>⚠️</span>
+                <span>資料已修改，尚未儲存</span>
+              </div>
+
+              <h3 id="previewTitle">紀錄詳情</h3>
+              <div class="preview-section">
+                <h4>📋 基本資料</h4>
+                <div class="preview-grid">
+                  <div class="preview-item">
+                    <span class="required">服務日期</span>
+                    <input type="date" class="preview-edit-field" id="preview服務日期" onchange="markPreviewChanged()">
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">服務項目</span>
+                    <select class="preview-edit-field" id="preview服務項目" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">個案姓名</span>
+                    <input type="text" class="preview-edit-field" id="preview個案姓名" onchange="markPreviewChanged()">
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">個案性別</span>
+                    <select class="preview-edit-field" id="preview個案性別" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">服務方式</span>
+                    <select class="preview-edit-field" id="preview服務方式" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">個案身分</span>
+                    <select class="preview-edit-field" id="preview個案身分" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">個案國籍</span>
+                    <div class="single-hierarchical-select" id="preview個案國籍-hierarchical">
+                      <div class="hierarchical-controls">
+                        <select class="preview-edit-field category-select" id="preview個案國籍-category"
+                          onchange="markPreviewChanged()">
+                          <option value="">選擇類別</option>
+                        </select>
+                        <select class="preview-edit-field subcategory-select" id="preview個案國籍-subcategory"
+                          onchange="markPreviewChanged()" disabled>
+                          <option value="">選擇細項</option>
+                        </select>
+                        <input type="text" class="preview-edit-field custom-input" id="preview個案國籍-custom"
+                          onchange="markPreviewChanged()" placeholder="輸入自訂內容..."
+                          style="display:none; margin-top: 5px;">
+                      </div>
+                      <div id="preview個案國籍-display" class="selected-value-display"></div>
+                      <input type="hidden" id="preview個案國籍" onchange="markPreviewChanged()">
+                    </div>
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">個案來源</span>
+                    <select class="preview-edit-field" id="preview個案來源" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span>有無在案</span>
+                    <select class="preview-edit-field" id="preview有無在案"
+                      onchange="markPreviewChanged(); togglePreviewCaseWorker()">
+                      <option value="false">否</option>
+                      <option value="true">是</option>
+                    </select>
+                  </div>
+                  <div class="preview-item" id="preview在案社工Row" style="display:none;">
+                    <span>在案社工</span>
+                    <input type="text" class="preview-edit-field" id="preview在案社工" onchange="markPreviewChanged()"
+                      placeholder="請輸入社工姓名">
+                  </div>
+                </div>
+              </div>
+              <div class="preview-section">
+                <h4>📝 服務資訊</h4>
+                <div class="preview-grid">
+                  <div class="preview-item">
+                    <span class="required">服務社工</span>
+                    <select class="preview-edit-field" id="preview服務社工" onchange="markPreviewChanged()"></select>
+                  </div>
+
+                  <div class="preview-item">
+                    <span>服務主題</span>
+                    <select class="preview-edit-field" id="preview服務主題" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span class="required">暴力類型</span>
+                    <select class="preview-edit-field" id="preview暴力類型" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span>接受轉介項目</span>
+                    <select class="preview-edit-field" id="preview接受轉介項目" onchange="markPreviewChanged()"></select>
+                  </div>
+                  <div class="preview-item">
+                    <span>轉案股別/單位</span>
+                    <select class="preview-edit-field" id="preview轉案股別單位" onchange="markPreviewChanged()"></select>
+                  </div>
+                </div>
+              </div>
+              <div class="preview-section">
+                <h4>✅ 服務內容 (唯讀)</h4>
+                <div class="preview-tags-container">
+                  <div class="preview-tag-group"><span>陪同出庭</span>
+                    <div id="preview陪同出庭" class="preview-tags">-</div>
+                  </div>
+                  <div class="preview-tag-group"><span>人身安全</span>
+                    <div id="preview人身安全" class="preview-tags">-</div>
+                  </div>
+                  <div class="preview-tag-group"><span>會談服務</span>
+                    <div id="preview會談服務" class="preview-tags">-</div>
+                  </div>
+                  <div class="preview-tag-group"><span>法律服務</span>
+                    <div id="preview法律服務" class="preview-tags">-</div>
+                  </div>
+                  <div class="preview-tag-group"><span>聯繫</span>
+                    <div id="preview聯繫" class="preview-tags">-</div>
+                  </div>
+                  <div class="preview-tag-group"><span>轉介</span>
+                    <div id="preview轉介" class="preview-tags">-</div>
+                  </div>
+                  <div class="preview-tag-group"><span>通報</span>
+                    <div id="preview通報" class="preview-tags">-</div>
+                  </div>
+                </div>
+                <p style="font-size: 0.8rem; color: #999; margin-top: 10px;">💡 多選項目請點擊表格的編輯按鈕進行完整編輯</p>
+              </div>
+
+              <!-- 儲存按鈕區 -->
+              <div class="preview-actions">
+                <button class="btn btn-primary" onclick="savePreviewChanges()">💾 儲存變更</button>
+                <button class="btn btn-secondary" onclick="discardPreviewChanges()">↩️ 捨棄變更</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 統計報表頁籤 -->
+      <section id="stats-tab" class="tab-panel">
+        <div class="stats-container">
+          <h2>📊 統計報表</h2>
+
+          <!-- 篩選區 -->
+          <div class="stats-filter-section">
+            <div class="stats-filter-row">
+              <div class="stats-filter-group">
+                <label>年份 (民國)</label>
+                <select id="statsYear">
+                  <!-- 動態填入年份選項 -->
+                </select>
+              </div>
+              <div class="stats-filter-group">
+                <label>月份</label>
+                <select id="statsMonth">
+                  <option value="全年">全年</option>
+                  <option value="1">1月</option>
+                  <option value="2">2月</option>
+                  <option value="3">3月</option>
+                  <option value="4">4月</option>
+                  <option value="5">5月</option>
+                  <option value="6">6月</option>
+                  <option value="7">7月</option>
+                  <option value="8">8月</option>
+                  <option value="9">9月</option>
+                  <option value="10">10月</option>
+                  <option value="11">11月</option>
+                  <option value="12">12月</option>
+                </select>
+              </div>
+              <div class="stats-filter-actions">
+                <button class="btn btn-primary" onclick="generateReport()">產生報表</button>
+                <button class="btn btn-success" onclick="exportReportToExcel()">匯出 Excel</button>
+                <button class="btn btn-warning" onclick="exportAnnualReport()">匯出年報</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 報表顯示區 -->
+          <div id="statsReportContainer" class="stats-report-container">
+            <div class="stats-placeholder">
+              <span>📊</span>
+              <p>請選擇年份和月份後，點擊「產生報表」</p>
+            </div>
+          </div>
+
+          <!-- 報表載入中 -->
+          <div id="statsLoading" class="stats-loading" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p>報表產生中，請稍候...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 系統管理頁籤 (僅管理員) -->
+      <section id="admin-tab" class="tab-panel">
+        <div class="admin-container">
+          <h2>⚙️ 系統管理</h2>
+
+          <!-- 使用者管理 -->
+          <div class="admin-section">
+            <h3>👥 使用者管理</h3>
+            <button class="btn btn-success" onclick="openAddUserModal()">➕ 新增使用者</button>
+            <table class="users-table" id="usersTable">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th>姓名</th>
+                  <th>角色</th>
+                  <th>狀態</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody"></tbody>
+            </table>
+          </div>
+
+
+          <!-- 服務社工管理 -->
+          <div class="admin-section">
+            <h3>👷 服務社工管理</h3>
+            <div class="action-bar" style="margin-bottom: 15px; display: flex; gap: 10px;">
+              <button class="btn btn-success" onclick="openAddSocialWorkerModal()">➕ 新增外部社工</button>
+              <button class="btn btn-primary" onclick="saveSocialWorkerSettings()">💾 儲存設定</button>
+            </div>
+
+            <div class="social-worker-list-container"
+              style="border: 1px solid #ddd; padding: 15px; border-radius: 8px; max-height: 400px; overflow-y: auto; background: #fff;">
+              <div id="socialWorkerList" class="checkbox-grid">
+                <!-- JS 動態填入 -->
+                <p class="text-muted">載入中...</p>
+              </div>
+            </div>
+            <p class="hint-text" style="margin-top: 5px;">💡 勾選代表「顯示」，取消勾選代表「隱藏」。系統使用者預設會顯示，若要隱藏請取消勾選。</p>
+          </div>
+
+          <!-- 系統維護 -->
+          <div class="admin-section">
+            <h3>🔧 系統維護</h3>
+            <div class="maintenance-actions">
+              <button class="btn btn-warning" onclick="clearSystemCache()">🗑️ 清除快取</button>
+              <span class="hint-text">如果資料顯示不正確，可嘗試清除快取後重新查詢</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 新增/編輯紀錄 Modal -->
+  <div id="recordModal" class="modal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h2 id="recordModalTitle">新增服務紀錄</h2>
+        <button class="close-btn" onclick="closeRecordModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="recordForm">
+          <input type="hidden" id="recordId">
+
+          <!-- 基本資料 -->
+          <div class="form-section">
+            <h3>📋 基本資料</h3>
+            <div class="form-grid grid-4">
+              <div class="form-group col-span-1">
+                <label class="required">服務日期</label>
+                <input type="date" id="服務日期" required>
+              </div>
+              <div class="form-group col-span-1">
+                <label class="required">服務項目</label>
+                <select id="服務項目" required></select>
+              </div>
+              <div class="form-group col-span-1">
+                <label class="required">個案姓名</label>
+                <input type="text" id="個案姓名" required>
+              </div>
+              <div class="form-group col-span-1">
+                <label class="required">個案性別</label>
+                <select id="個案性別" required></select>
+              </div>
+              <div class="form-group col-span-1">
+                <label class="required">服務方式</label>
+                <select id="服務方式" required></select>
+              </div>
+              <div class="form-group col-span-1">
+                <label class="required">個案身分</label>
+                <select id="個案身分" required></select>
+              </div>
+              <div class="form-group col-span-1">
+                <label>有無在案</label>
+                <select id="有無在案">
+                  <option value="false">否</option>
+                  <option value="true">是</option>
+                </select>
+              </div>
+              <div class="form-group col-span-1" id="在案社工Group" style="display:none;">
+                <label>在案社工</label>
+                <input type="text" id="在案社工" placeholder="請輸入社工姓名 (如: 苗栗分所-陳小美)">
+              </div>
+              <!-- 個案國籍 (單選階層式) -->
+              <div class="form-group col-span-4">
+                <label class="required">個案國籍</label>
+                <div class="single-hierarchical-select compact" id="個案國籍-hierarchical">
+                  <div class="hierarchical-controls">
+                    <select id="個案國籍-category" class="category-select" required>
+                      <option value="">選擇類別</option>
+                    </select>
+                    <select id="個案國籍-subcategory" class="subcategory-select" disabled>
+                      <option value="">選擇細項</option>
+                    </select>
+                    <input type="text" id="個案國籍-custom" class="custom-input" placeholder="輸入自訂內容..."
+                      style="display:none;">
+                  </div>
+                  <div id="個案國籍-display" class="selected-value-display"></div>
+                  <input type="hidden" id="個案國籍" name="個案國籍" required>
+                </div>
+              </div>
+              <div class="form-group col-span-1">
+                <label class="required">個案來源</label>
+                <select id="個案來源" required></select>
+              </div>
+
+              <!-- 接受轉介項目 / 轉案股別 (條件顯示，僅個案來源=接受轉介時) -->
+              <div class="form-group" id="接受轉介項目Group" style="display:none;">
+                <label>接受轉介項目</label>
+                <div class="single-hierarchical-select compact" id="接受轉介項目-hierarchical">
+                  <div class="hierarchical-controls">
+                    <select id="接受轉介項目-category" class="category-select">
+                      <option value="">選擇類別</option>
+                    </select>
+                    <select id="接受轉介項目-subcategory" class="subcategory-select" disabled>
+                      <option value="">選擇細項</option>
+                    </select>
+                    <input type="text" id="接受轉介項目-custom" class="custom-input" placeholder="輸入自訂內容..."
+                      style="display:none;">
+                  </div>
+                  <div id="接受轉介項目-display" class="selected-value-display"></div>
+                  <input type="hidden" id="接受轉介項目" name="接受轉介項目">
+                </div>
+              </div>
+              <div class="form-group" id="轉案股別單位Group" style="display:none;">
+                <label>轉案股別/單位</label>
+                <div class="single-hierarchical-select compact" id="轉案股別單位-hierarchical">
+                  <div class="hierarchical-controls">
+                    <select id="轉案股別單位-category" class="category-select">
+                      <option value="">選擇類別</option>
+                    </select>
+                    <select id="轉案股別單位-subcategory" class="subcategory-select" disabled>
+                      <option value="">選擇細項</option>
+                    </select>
+                    <input type="text" id="轉案股別單位-custom" class="custom-input" placeholder="輸入自訂內容..."
+                      style="display:none;">
+                  </div>
+                  <div id="轉案股別單位-display" class="selected-value-display"></div>
+                  <input type="hidden" id="轉案股別/單位" name="轉案股別/單位">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 服務資訊 -->
+          <div class="form-section">
+            <h3>📝 服務資訊</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="required">服務社工</label>
+                <select id="服務社工" required></select>
+              </div>
+
+              <!-- 暴力類型 (單選階層式) -->
+              <div class="form-group">
+                <label class="required">暴力類型</label>
+                <div class="single-hierarchical-select compact" id="暴力類型-hierarchical">
+                  <div class="hierarchical-controls">
+                    <select id="暴力類型-category" class="category-select">
+                      <option value="">選擇類別</option>
+                    </select>
+                    <select id="暴力類型-subcategory" class="subcategory-select" disabled>
+                      <option value="">選擇細項</option>
+                    </select>
+                    <input type="text" id="暴力類型-custom" class="custom-input" placeholder="輸入自訂內容..."
+                      style="display:none;">
+                  </div>
+                  <div id="暴力類型-display" class="selected-value-display"></div>
+                  <input type="hidden" id="暴力類型" name="暴力類型" required>
+                </div>
+              </div>
+
+              <!-- 服務主題 (單選階層式) -->
+              <div class="form-group">
+                <label class="required">服務主題</label>
+                <div class="single-hierarchical-select compact" id="服務主題-hierarchical">
+                  <div class="hierarchical-controls">
+                    <select id="服務主題-category" class="category-select">
+                      <option value="">選擇類別</option>
+                    </select>
+                    <select id="服務主題-subcategory" class="subcategory-select" disabled>
+                      <option value="">選擇細項</option>
+                    </select>
+                    <input type="text" id="服務主題-custom" class="custom-input" placeholder="輸入自訂內容..."
+                      style="display:none;">
+                  </div>
+                  <div id="服務主題-display" class="selected-value-display"></div>
+                  <input type="hidden" id="服務主題" name="服務主題">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 多選項目 -->
+          <div class="form-section">
+            <h3>✅ 服務內容 (可多選)</h3>
+            <div class="form-grid">
+              <div class="form-group full-width">
+                <label>陪同出庭</label>
+                <div id="陪同出庭-checkboxes" class="checkbox-group"></div>
+              </div>
+              <div class="form-group full-width">
+                <label>人身安全</label>
+                <div id="人身安全-checkboxes" class="checkbox-group"></div>
+              </div>
+              <div class="form-group full-width">
+                <label>會談服務</label>
+                <div id="會談服務-checkboxes" class="checkbox-group"></div>
+              </div>
+              <div class="form-group full-width">
+                <label>法律服務</label>
+                <div id="法律服務-checkboxes" class="checkbox-group"></div>
+              </div>
+              <div class="form-group" id="聯繫FormGroup">
+                <label>聯繫 (可多選)</label>
+                <div class="hierarchical-select compact" id="聯繫-hierarchical">
+                  <div class="hierarchical-controls">
+                    <select id="聯繫-category" class="category-select">
+                      <option value="">選擇類別</option>
+                    </select>
+                    <select id="聯繫-subcategory" class="subcategory-select" disabled>
+                      <option value="">選擇細項</option>
+                    </select>
+                    <input type="text" id="聯繫-custom" class="custom-input" placeholder="輸入自訂內容..."
+                      style="display:none;">
+                    <button type="button" class="btn-add-item" onclick="addHierarchicalItem('聯繫')">+
+                      新增</button>
+                  </div>
+                  <div id="聯繫-selected-tags" class="selected-tags"></div>
+                  <input type="hidden" id="聯繫-values" name="聯繫">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>轉介 (可多選)</label>
+                <div class="hierarchical-select compact" id="轉介-hierarchical">
+                  <div class="hierarchical-controls">
+                    <select id="轉介-category" class="category-select">
+                      <option value="">選擇類別</option>
+                    </select>
+                    <select id="轉介-subcategory" class="subcategory-select" disabled>
+                      <option value="">選擇細項</option>
+                    </select>
+                    <input type="text" id="轉介-custom" class="custom-input" placeholder="輸入自訂內容..."
+                      style="display:none;">
+                    <button type="button" class="btn-add-item" onclick="addHierarchicalItem('轉介')">+
+                      新增</button>
+                  </div>
+                  <div id="轉介-selected-tags" class="selected-tags"></div>
+                  <input type="hidden" id="轉介-values" name="轉介">
+                </div>
+              </div>
+              <div class="form-group full-width">
+                <label>通報</label>
+                <div id="通報-checkboxes" class="checkbox-group"></div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeRecordModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveRecord()">💾 儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增使用者 Modal -->
+  <div id="userModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>新增使用者</h2>
+        <button class="close-btn" onclick="closeUserModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="userForm">
+          <div class="form-group">
+            <label class="required">Email</label>
+            <input type="email" id="userEmail" required>
+          </div>
+          <div class="form-group">
+            <label>姓名</label>
+            <input type="text" id="userName">
+          </div>
+          <div class="form-group">
+            <label class="required">角色</label>
+            <select id="userRole" required>
+              <option value="user">使用者</option>
+              <option value="admin">管理者</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeUserModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveUser()">💾 儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增外部社工 Modal -->
+  <div id="socialWorkerModal" class="modal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2>新增外部社工</h2>
+        <button class="close-btn" onclick="closeSocialWorkerModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint-text" style="margin-bottom: 15px;">此功能用於新增「非系統使用者」的社工 (例如：已離職、外部支援)。若該員有系統帳號，請直接在列表勾選即可。</p>
+        <div class="form-group">
+          <label class="required">社工姓名</label>
+          <input type="text" id="newSocialWorkerName" placeholder="請輸入姓名" required>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeSocialWorkerModal()">取消</button>
+        <button class="btn btn-primary" onclick="addManualSocialWorker()">確認新增</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- 確認對話框 -->
+  <div id="confirmModal" class="modal">
+    <div class="modal-content modal-small">
+      <div class="modal-header">
+        <h2 id="confirmTitle">確認</h2>
+      </div>
+      <div class="modal-body">
+        <p id="confirmMessage"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeConfirmModal()">取消</button>
+        <button class="btn btn-danger" id="confirmBtn">確認</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提示訊息 -->
+  <div id="toast" class="toast"></div>
+
+  <?!= include('scripts'); ?>
+</body>
+
+</html>
