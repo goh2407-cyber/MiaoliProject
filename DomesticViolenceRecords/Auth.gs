@@ -92,6 +92,31 @@ function getUserRole(email) {
 // ==================== 權限檢查 ====================
 
 /**
+ * 驗證系統登入密碼（從 Script Properties 讀取）
+ * Script Property key: SYSTEM_PASSWORD
+ * @param {string} inputPassword
+ * @returns {boolean}
+ */
+function verifySystemPassword(inputPassword) {
+  try {
+    const password = (inputPassword || '').trim();
+    if (!password) return false;
+
+    const props = PropertiesService.getScriptProperties();
+    const expected = (props.getProperty('SYSTEM_PASSWORD') || '').trim();
+    if (!expected) {
+      console.error('SYSTEM_PASSWORD 尚未設定於 Script Properties');
+      return false;
+    }
+
+    return password === expected;
+  } catch (error) {
+    console.error('驗證系統密碼失敗:', error);
+    return false;
+  }
+}
+
+/**
  * 檢查使用者是否為有效使用者 (admin 或 user)
  * @throws {Error} 如果權限不足
  */

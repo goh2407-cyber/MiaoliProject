@@ -11,8 +11,6 @@
     let allMeetingRecords = [];
     let currentMeetingPage = 1;
     const PAGE_SIZE = 12;
-    // 系統密碼 (Base64 編碼混淆)
-    const _p = 'REDACTED_PASSWORD';
     let isAuthenticated = false;
 
     // 專注模式狀態
@@ -138,21 +136,31 @@
     function checkPassword() {
         const input = document.getElementById('systemPassword');
         const error = document.getElementById('passwordError');
+        const password = input.value;
 
-        if (input.value === atob(_p)) {
-            isAuthenticated = true;
-            document.getElementById('passwordModal').style.display = 'none';
-            // 密碼正確，開始初始化系統
-            initializeApp();
-            setupFormEvents();
-        } else {
-            error.style.display = 'block';
-            input.value = '';
-            input.focus();
-            // 震動效果
-            input.style.animation = 'shake 0.5s';
-            setTimeout(() => { input.style.animation = ''; }, 500);
-        }
+        google.script.run
+            .withSuccessHandler(function (ok) {
+                if (ok) {
+                    isAuthenticated = true;
+                    document.getElementById('passwordModal').style.display = 'none';
+                    // 密碼正確，開始初始化系統
+                    initializeApp();
+                    setupFormEvents();
+                } else {
+                    error.style.display = 'block';
+                    input.value = '';
+                    input.focus();
+                    // 震動效果
+                    input.style.animation = 'shake 0.5s';
+                    setTimeout(() => { input.style.animation = ''; }, 500);
+                }
+            })
+            .withFailureHandler(function () {
+                error.style.display = 'block';
+                input.value = '';
+                input.focus();
+            })
+            .verifySystemPassword(password);
     }
 
     // ==================== 初始化 ====================
