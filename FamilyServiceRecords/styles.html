@@ -2877,12 +2877,22 @@
         font-size: 0.8rem;
     }
 
+    #records-tab .records-table-container,
+    #meeting-tab .records-table-container,
+    #meeting-execution-tab .records-table-container {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow-x: auto;
+        overflow-y: auto;
+    }
+
     #previewContent,
     #meetingPreviewContent,
     #meetingExecutionPreviewContent {
         display: flex;
         flex-direction: column;
-        min-height: 0;
+        min-height: 100%;
         height: 100%;
         overflow-y: auto;
         overflow-x: hidden;
@@ -3051,10 +3061,26 @@
     #meetingExecutionPreviewPanel .preview-actions {
         padding: 8px 10px;
         gap: 8px;
-        margin-top: 8px;
-        position: static;
-        bottom: auto;
-        z-index: auto;
+        margin-top: auto;
+        position: sticky;
+        bottom: -14px;
+        z-index: 25;
+        background: var(--card);
+        border-top: 1px solid var(--border);
+        box-shadow: 0 -4px 10px rgba(26, 26, 26, 0.06);
+    }
+
+    #records-tab .records-table-container .pagination,
+    #meeting-tab .records-table-container .pagination,
+    #meeting-execution-tab .records-table-container .pagination {
+        position: sticky;
+        bottom: -14px;
+        z-index: 20;
+        margin-top: auto;
+        padding: 10px 8px;
+        background: var(--card);
+        border-top: 1px solid var(--border);
+        box-shadow: 0 -4px 10px rgba(26, 26, 26, 0.05);
     }
 
     #previewPanel .preview-actions .btn,
