@@ -1867,10 +1867,9 @@
 
         // 顯示預覽內容
         placeholder.style.display = 'none';
-        previewContent.style.display = 'block';
+        previewContent.style.display = 'flex';
 
-        // 進入專注模式
-        toggleFocusMode(true);
+        // 保持目前版面，不在點選列時自動切換專注模式
 
         // 儲存 RecordId
         document.getElementById('previewRecordId').value = recordId;
@@ -2629,7 +2628,7 @@
         if (!record) return;
 
         document.querySelector('#meetingExecutionPreviewPanel .preview-placeholder').style.display = 'none';
-        document.getElementById('meetingExecutionPreviewContent').style.display = 'block';
+        document.getElementById('meetingExecutionPreviewContent').style.display = 'flex';
 
         _meetingExecutionPreviewChanged = false;
         document.getElementById('meetingExecutionUnsavedIndicator').classList.add('hidden');
@@ -2661,10 +2660,7 @@
         );
         if (activeRow) activeRow.classList.add('selected');
 
-        // 開啟專注模式
-        if (!isMeetingExecutionFocusMode) {
-            toggleMeetingExecutionFocusMode(true);
-        }
+        // 保持目前版面，不在點選列時自動切換專注模式
     }
 
     function saveMeetingExecutionPreviewChanges() {
@@ -3242,8 +3238,7 @@
         });
 
         placeholder.style.display = 'none';
-        previewContent.style.display = 'block';
-        toggleMeetingFocusMode(true);
+        previewContent.style.display = 'flex';
         document.getElementById('meetingPreviewRecordId').value = recordId;
 
         initMeetingPreviewDropdowns();
