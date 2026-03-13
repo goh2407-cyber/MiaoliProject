@@ -942,9 +942,9 @@
     }
 
     .records-preview-container .records-table-container {
-        flex: 1 1 70%;
-        max-width: 75%;
-        min-width: 0;
+        flex: 1 1 58%;
+        max-width: 60%;
+        min-width: 520px;
         overflow-x: auto;
     }
 
@@ -958,9 +958,9 @@
     .preview-panel {
         display: flex;
         flex-direction: column;
-        flex: 0 0 25%;
-        max-width: 30%;
-        min-width: 280px;
+        flex: 1 1 42%;
+        max-width: 42%;
+        min-width: 360px;
         background: linear-gradient(145deg, var(--muted) 0%, #fff 100%);
         border: 1px solid var(--border);
         border-radius: 12px;
@@ -1315,6 +1315,35 @@
     }
 
     /* ==================== 響應式設計 ==================== */
+    @media (max-width: 1280px) {
+        .records-preview-container {
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .records-preview-container .records-table-container,
+        .preview-panel {
+            flex: 1 1 100%;
+            max-width: 100%;
+            min-width: 0;
+            width: 100%;
+        }
+
+        .preview-panel {
+            position: static;
+            top: auto;
+            height: auto;
+            max-height: 520px;
+            order: 2;
+        }
+
+        .focus-mode .records-preview-container .records-table-container,
+        .focus-mode .preview-panel {
+            flex: 1 1 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+    }
 
     /* 平板 (1200px 以下) */
     @media (max-width: 1200px) {
@@ -1333,9 +1362,8 @@
             min-width: auto;
             max-height: 350px;
             position: static;
-            order: -1;
-            /* 預覽面板移到上方 */
-            margin-bottom: 15px;
+            order: 2;
+            margin-top: 12px;
         }
 
         .preview-placeholder {
@@ -1931,8 +1959,8 @@
 
     /* 專注模式：表格區域調整 */
     .focus-mode .records-preview-container .records-table-container {
-        flex: 0 0 35% !important;
-        max-width: 35% !important;
+        flex: 0 0 46% !important;
+        max-width: 46% !important;
         transition: all 0.4s ease;
     }
 
@@ -1947,9 +1975,9 @@
     /* 專注模式：編輯面板放大（更寬）*/
     .focus-mode .preview-panel {
         zoom: 1 !important;
-        flex: 0 0 65% !important;
-        max-width: 65% !important;
-        min-width: 500px !important;
+        flex: 0 0 54% !important;
+        max-width: 54% !important;
+        min-width: 380px !important;
         transition: all 0.4s ease;
     }
 
@@ -1973,7 +2001,7 @@
 
     /* 一般模式：預覽面板縮小 */
     .preview-panel {
-        zoom: 0.7;
+        zoom: 1;
         transition: all 0.4s ease;
     }
 
@@ -2840,6 +2868,254 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+
+    /* 三個主系統快速編輯：縮小字體與間距，降低畫面高度 */
+    #previewPanel,
+    #meetingPreviewPanel,
+    #meetingExecutionPreviewPanel {
+        font-size: 0.8rem;
+    }
+
+    #previewContent,
+    #meetingPreviewContent,
+    #meetingExecutionPreviewContent {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 10px 10px 14px;
+    }
+
+    #previewPanel .preview-content h3,
+    #meetingPreviewPanel .preview-content h3,
+    #meetingExecutionPreviewPanel .preview-content h3 {
+        font-size: 0.95rem !important;
+        margin-bottom: 10px !important;
+        padding-bottom: 6px !important;
+    }
+
+    #previewPanel .preview-section,
+    #meetingPreviewPanel .preview-section,
+    #meetingExecutionPreviewPanel .preview-section {
+        margin-bottom: 10px;
+    }
+
+    #previewPanel .preview-section h4,
+    #meetingPreviewPanel .preview-section h4,
+    #meetingExecutionPreviewPanel .preview-section h4 {
+        font-size: 0.68rem !important;
+        letter-spacing: 0.1em !important;
+        margin-bottom: 8px !important;
+        gap: 8px !important;
+    }
+
+    #previewPanel .preview-section h4::before,
+    #previewPanel .preview-section h4::after,
+    #meetingPreviewPanel .preview-section h4::before,
+    #meetingPreviewPanel .preview-section h4::after,
+    #meetingExecutionPreviewPanel .preview-section h4::before,
+    #meetingExecutionPreviewPanel .preview-section h4::after {
+        display: none !important;
+    }
+
+    #previewPanel .preview-grid,
+    #meetingPreviewPanel .preview-grid,
+    #meetingExecutionPreviewPanel .preview-grid {
+        gap: 6px !important;
+    }
+
+    #previewPanel .preview-item,
+    #meetingPreviewPanel .preview-item,
+    #meetingExecutionPreviewPanel .preview-item {
+        padding: 6px 8px !important;
+    }
+
+    #previewPanel .preview-item span,
+    #meetingPreviewPanel .preview-item span,
+    #meetingExecutionPreviewPanel .preview-item span {
+        font-size: 0.74rem;
+        margin-bottom: 1px;
+    }
+
+    #previewPanel .preview-edit-field,
+    #meetingPreviewPanel .preview-edit-field,
+    #meetingExecutionPreviewPanel .preview-edit-field {
+        font-size: 0.82rem !important;
+        padding: 5px 7px !important;
+        min-height: 30px;
+    }
+
+    #previewPanel .single-hierarchical-select,
+    #meetingPreviewPanel .single-hierarchical-select,
+    #meetingExecutionPreviewPanel .single-hierarchical-select {
+        padding: 6px;
+        gap: 4px;
+    }
+
+    #previewPanel .single-hierarchical-select .hierarchical-controls,
+    #meetingPreviewPanel .single-hierarchical-select .hierarchical-controls,
+    #meetingExecutionPreviewPanel .single-hierarchical-select .hierarchical-controls {
+        gap: 4px;
+        align-items: stretch;
+    }
+
+    #previewPanel .single-hierarchical-select .category-select,
+    #previewPanel .single-hierarchical-select .subcategory-select,
+    #previewPanel .single-hierarchical-select .custom-input,
+    #meetingPreviewPanel .single-hierarchical-select .category-select,
+    #meetingPreviewPanel .single-hierarchical-select .subcategory-select,
+    #meetingPreviewPanel .single-hierarchical-select .custom-input,
+    #meetingExecutionPreviewPanel .single-hierarchical-select .category-select,
+    #meetingExecutionPreviewPanel .single-hierarchical-select .subcategory-select,
+    #meetingExecutionPreviewPanel .single-hierarchical-select .custom-input {
+        min-width: 0;
+        height: 32px;
+        padding: 4px 6px;
+        font-size: 0.8rem;
+    }
+
+    #previewPanel .selected-value-display,
+    #meetingPreviewPanel .selected-value-display,
+    #meetingExecutionPreviewPanel .selected-value-display {
+        min-height: 24px;
+    }
+
+    #previewPanel .preview-tags-container,
+    #meetingPreviewPanel .preview-tags-container,
+    #meetingExecutionPreviewPanel .preview-tags-container {
+        gap: 6px;
+    }
+
+    #previewPanel .preview-tag-group,
+    #meetingPreviewPanel .preview-tag-group,
+    #meetingExecutionPreviewPanel .preview-tag-group {
+        gap: 3px;
+    }
+
+    #previewPanel .preview-tag-group>span,
+    #meetingPreviewPanel .preview-tag-group>span,
+    #meetingExecutionPreviewPanel .preview-tag-group>span {
+        font-size: 0.72rem;
+    }
+
+    #previewPanel .preview-tag,
+    #meetingPreviewPanel .preview-tag,
+    #meetingExecutionPreviewPanel .preview-tag {
+        font-size: 0.68rem !important;
+        padding: 2px 7px !important;
+    }
+
+    #meetingExecutionPreviewPanel .tag-input-container {
+        min-height: 34px;
+        padding: 4px 6px;
+        gap: 4px;
+    }
+
+    #meetingExecutionPreviewPanel .tag-item {
+        font-size: 0.78rem;
+        padding: 2px 6px;
+    }
+
+    #meetingExecutionPreviewPanel .tag-input {
+        min-width: 110px;
+        font-size: 0.8rem;
+        padding: 2px !important;
+    }
+
+    #meetingExecutionPreviewPanel .checkbox-group {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        padding: 8px;
+        max-height: 200px;
+    }
+
+    #meetingExecutionPreviewPanel .checkbox-item {
+        padding: 6px 8px;
+        gap: 6px;
+    }
+
+    #meetingExecutionPreviewPanel .checkbox-item label {
+        font-size: 0.78rem;
+    }
+
+    #meetingExecutionPreviewPanel .checkbox-item input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+    }
+
+    #previewPanel .preview-actions,
+    #meetingPreviewPanel .preview-actions,
+    #meetingExecutionPreviewPanel .preview-actions {
+        padding: 8px 10px;
+        gap: 8px;
+        margin-top: 8px;
+        position: static;
+        bottom: auto;
+        z-index: auto;
+    }
+
+    #previewPanel .preview-actions .btn,
+    #meetingPreviewPanel .preview-actions .btn,
+    #meetingExecutionPreviewPanel .preview-actions .btn {
+        min-height: 34px !important;
+        padding: 6px 10px !important;
+        font-size: 0.8rem !important;
+    }
+
+    /* 桌機版快速編輯高度控制：避免整頁超出視窗產生主卷軸 */
+    @media (min-width: 1281px) {
+        :root {
+            --quick-edit-pane-height: clamp(380px, calc(100vh - 300px), 760px);
+        }
+
+        .app-main {
+            padding: 24px !important;
+        }
+
+        #records-tab .filter-section,
+        #meeting-tab .filter-section,
+        #meeting-execution-tab .filter-section {
+            margin-bottom: 12px;
+        }
+
+        #records-tab .records-preview-container,
+        #meeting-tab .records-preview-container,
+        #meeting-execution-tab .records-preview-container {
+            align-items: stretch;
+            gap: 12px;
+        }
+
+        #records-tab .records-table-container,
+        #meeting-tab .records-table-container,
+        #meeting-execution-tab .records-table-container {
+            height: var(--quick-edit-pane-height);
+            max-height: var(--quick-edit-pane-height);
+            overflow: auto;
+        }
+
+        #previewPanel,
+        #meetingPreviewPanel,
+        #meetingExecutionPreviewPanel {
+            height: var(--quick-edit-pane-height) !important;
+            max-height: var(--quick-edit-pane-height) !important;
+            top: 0 !important;
+        }
+
+        #previewPanel .preview-placeholder,
+        #meetingPreviewPanel .preview-placeholder,
+        #meetingExecutionPreviewPanel .preview-placeholder {
+            padding: 36px 14px;
+        }
+
+        #previewPanel .preview-placeholder span,
+        #meetingPreviewPanel .preview-placeholder span,
+        #meetingExecutionPreviewPanel .preview-placeholder span {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
     }
 
     @media (max-width: 1280px) {

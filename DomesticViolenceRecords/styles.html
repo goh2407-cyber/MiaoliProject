@@ -1089,8 +1089,8 @@
         border-top: 1px solid #eee;
         background: #f8f9fa;
         border-radius: 0 0 12px 12px;
-        position: sticky;
-        bottom: 0;
+        position: static;
+        bottom: auto;
     }
 
     /* 選中的表格列 */
@@ -1764,5 +1764,219 @@
     .records-table-container .pagination {
         margin-top: 15px;
         padding-top: 10px;
+    }
+
+    /* ==================== 家暴紀錄詳情對齊家事版 ==================== */
+    #records-tab .records-preview-container {
+        width: 100%;
+        position: relative;
+        align-items: flex-start;
+        gap: 20px;
+    }
+
+    #records-tab .records-preview-container .records-table-container {
+        flex: 1 1 58%;
+        max-width: 60%;
+        min-width: 520px;
+        overflow-x: auto;
+    }
+
+    #previewPanel {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 42%;
+        max-width: 42%;
+        min-width: 360px;
+        max-height: calc(100vh - 10px);
+        height: calc(100vh - 10px);
+        overflow: hidden;
+        position: sticky;
+        top: 5px;
+        font-size: 0.85rem;
+        zoom: 1;
+    }
+
+    #previewContent {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 10px 10px 14px;
+    }
+
+    #previewPanel .preview-content h3 {
+        font-size: 0.95rem !important;
+        margin-bottom: 10px !important;
+        padding-bottom: 6px !important;
+    }
+
+    #previewPanel .preview-section {
+        margin-bottom: 10px;
+    }
+
+    #previewPanel .preview-section h4 {
+        font-size: 0.68rem !important;
+        letter-spacing: 0.1em !important;
+        margin-bottom: 8px !important;
+        gap: 8px !important;
+    }
+
+    #previewPanel .preview-section h4::before,
+    #previewPanel .preview-section h4::after {
+        display: none !important;
+    }
+
+    #previewPanel .preview-grid {
+        gap: 6px !important;
+    }
+
+    #previewPanel .preview-item {
+        padding: 6px 8px !important;
+    }
+
+    #previewPanel .preview-item span {
+        font-size: 0.74rem;
+        margin-bottom: 1px;
+    }
+
+    #previewPanel .preview-edit-field {
+        font-size: 0.82rem !important;
+        padding: 5px 7px !important;
+        min-height: 30px;
+    }
+
+    #previewPanel .single-hierarchical-select {
+        padding: 6px;
+        gap: 4px;
+    }
+
+    #previewPanel .single-hierarchical-select .hierarchical-controls {
+        gap: 4px;
+        align-items: stretch;
+    }
+
+    #previewPanel .single-hierarchical-select .category-select,
+    #previewPanel .single-hierarchical-select .subcategory-select,
+    #previewPanel .single-hierarchical-select .custom-input {
+        min-width: 0;
+        height: 32px;
+        padding: 4px 6px;
+        font-size: 0.8rem;
+    }
+
+    #previewPanel .selected-value-display {
+        min-height: 24px;
+    }
+
+    #previewPanel .preview-tags-container {
+        gap: 6px;
+    }
+
+    #previewPanel .preview-tag-group {
+        gap: 3px;
+    }
+
+    #previewPanel .preview-tag-group>span {
+        font-size: 0.72rem;
+    }
+
+    #previewPanel .preview-tag {
+        font-size: 0.68rem !important;
+        padding: 2px 7px !important;
+    }
+
+    #previewPanel .preview-actions {
+        padding: 8px 10px;
+        gap: 8px;
+        margin-top: 8px;
+        position: static;
+        bottom: auto;
+        z-index: auto;
+    }
+
+    #previewPanel .preview-actions .btn {
+        min-height: 34px !important;
+        padding: 6px 10px !important;
+        font-size: 0.8rem !important;
+    }
+
+    .focus-mode #records-tab .records-preview-container .records-table-container {
+        flex: 0 0 46% !important;
+        max-width: 46% !important;
+    }
+
+    .focus-mode #previewPanel {
+        zoom: 1 !important;
+        flex: 0 0 54% !important;
+        max-width: 54% !important;
+        min-width: 380px !important;
+    }
+
+    @media (max-width: 1280px) {
+        #records-tab .records-preview-container {
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        #records-tab .records-preview-container .records-table-container,
+        #previewPanel {
+            flex: 1 1 100%;
+            max-width: 100%;
+            min-width: 0;
+            width: 100%;
+        }
+
+        #previewPanel {
+            position: static;
+            top: auto;
+            height: auto;
+            max-height: 520px;
+            order: 2;
+        }
+
+        .focus-mode #records-tab .records-preview-container .records-table-container,
+        .focus-mode #previewPanel {
+            flex: 1 1 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+        }
+    }
+
+    @media (min-width: 1281px) {
+        :root {
+            --quick-edit-pane-height: clamp(380px, calc(100vh - 300px), 760px);
+        }
+
+        #records-tab .filter-section {
+            margin-bottom: 12px;
+        }
+
+        #records-tab .records-preview-container {
+            align-items: stretch;
+            gap: 12px;
+        }
+
+        #records-tab .records-table-container {
+            height: var(--quick-edit-pane-height);
+            max-height: var(--quick-edit-pane-height);
+            overflow: auto;
+        }
+
+        #previewPanel {
+            height: var(--quick-edit-pane-height) !important;
+            max-height: var(--quick-edit-pane-height) !important;
+            top: 0 !important;
+        }
+
+        #previewPanel .preview-placeholder {
+            padding: 36px 14px;
+        }
+
+        #previewPanel .preview-placeholder span {
+            font-size: 2rem;
+            margin-bottom: 8px;
+        }
     }
 </style>

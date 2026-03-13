@@ -1578,12 +1578,9 @@
             tr.classList.toggle('selected', tr.dataset.recordId === recordId);
         });
 
-        // 顯示預覽內容
+        // 顯示預覽內容（比照家事版，不自動切換專注模式）
         placeholder.style.display = 'none';
-        previewContent.style.display = 'block';
-
-        // 進入專注模式
-        toggleFocusMode(true);
+        previewContent.style.display = 'flex';
 
         // 儲存 RecordId
         document.getElementById('previewRecordId').value = recordId;
