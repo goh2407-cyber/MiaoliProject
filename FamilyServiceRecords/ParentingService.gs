@@ -677,6 +677,73 @@ function saveParentingPostSurvey(payload) {
 }
 
 /**
+ * 在「滿意度統計」分頁直接儲存「讓子女參加心理團體」欄位值
+ * @param {Object} payload { recordId, value }
+ */
+function saveParentingPostSurveyChildManual(payload) {
+  try {
+    const recordId = (payload && payload.recordId) ? String(payload.recordId).trim() : '';
+    if (!recordId) {
+      return { status: 'error', message: '缺少 RecordId' };
+    }
+
+    const raw = payload ? payload.value : '';
+    let childManual = '';
+    if (!(raw === '' || raw == null)) {
+      childManual = parseInt(raw, 10);
+      if (isNaN(childManual) || childManual < 0 || childManual > 999) {
+        return { status: 'error', message: '讓子女參加心理團體必須為 0~999' };
+      }
+    }
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('親職_課後問卷填答');
+    if (!sheet) {
+      return { status: 'error', message: '找不到「親職_課後問卷填答」工作表' };
+    }
+    ensureParentingPostSurveySheetHeaders_(sheet);
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { status: 'error', message: '尚無課後問卷資料，請先新增至少一筆填答' };
+    }
+
+    const headers = data[0];
+    const ridIdx = headers.indexOf('RecordId');
+    const childIdx = headers.indexOf('讓子女參加心理團體');
+    const updatedAtIdx = headers.indexOf('修改時間');
+    const updatedByIdx = headers.indexOf('修改者');
+    if (ridIdx < 0 || childIdx < 0) {
+      return { status: 'error', message: '找不到必要欄位（RecordId / 讓子女參加心理團體）' };
+    }
+
+    const rowNums = [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][ridIdx]) === recordId) {
+        rowNums.push(i + 1);
+      }
+    }
+    if (rowNums.length === 0) {
+      return { status: 'error', message: '此月份尚無課後問卷填答，請先新增填答者資料' };
+    }
+
+    const now = new Date();
+    const user = Session.getActiveUser().getEmail() || 'System';
+    rowNums.forEach(rowNum => {
+      sheet.getRange(rowNum, childIdx + 1).setValue(childManual);
+      if (updatedAtIdx >= 0) sheet.getRange(rowNum, updatedAtIdx + 1).setValue(now);
+      if (updatedByIdx >= 0) sheet.getRange(rowNum, updatedByIdx + 1).setValue(user);
+    });
+
+    return {
+      status: 'success',
+      message: '已儲存「讓子女參加心理團體」：' + (childManual === '' ? '空白' : childManual)
+    };
+  } catch (error) {
+    return { status: 'error', message: error.message };
+  }
+}
+
+/**
  * 取得指定 RecordId 的問卷統計結果（自動計算）
  * @param {string} recordId
  * @returns {Object} { status, data: { totalResponses, questions: [{q, counts, percents}], services } }

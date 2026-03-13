@@ -868,10 +868,10 @@
                     初階親職報表資料</button>
                   <button class="parenting-tab-btn" id="tabBtnSurvey" onclick="switchParentingTab('survey')">📝
                     初階親職教育課程問卷輸入</button>
-                  <button class="parenting-tab-btn" id="tabBtnStats" onclick="switchParentingTab('stats')">📊
-                    初階教育課程滿意度統計</button>
                   <button class="parenting-tab-btn" id="tabBtnPostSurvey" onclick="switchParentingTab('postSurvey')">📝
                     初階教育課程課後問卷輸入</button>
+                  <button class="parenting-tab-btn" id="tabBtnStats" onclick="switchParentingTab('stats')">📊
+                    初階教育課程滿意度統計</button>
                   <div style="flex:1"></div>
                   <button class="close-btn" onclick="closeParentingPreviewPanel()"
                     style="padding: 10px; background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
@@ -1112,6 +1112,10 @@
                             </table>
                           </div>
                         </div> <!-- end wrapper -->
+                      </div>
+                      <div class="preview-footer">
+                        <button class="btn btn-secondary" onclick="closeParentingPreviewPanel()">取消</button>
+                        <button class="btn btn-primary" id="surveyDisplaySaveBtn" onclick="saveSurveyDisplayChildManualValue()">💾 儲存課後問卷資料</button>
                       </div>
                     </div> <!-- 結束分頁 3 -->
 

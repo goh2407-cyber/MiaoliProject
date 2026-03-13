@@ -6005,6 +6005,7 @@
             renderServiceStatsRow({});
             return;
         }
+        window.currentSurveyRecordId = rid;
 
         const yearVal = document.getElementById('parentingYear').value;
         const mmStr = String(monthNum).padStart(2, '0');
@@ -6038,18 +6039,14 @@
         svcKeys.forEach((key, i) => {
             if (!cells[i]) return;
             if (key === '兒少團體') {
-                let input = cells[i].querySelector('#surveyDisplayChildManualInput');
                 const v = (services && services[key]) ? services[key] : 0;
-                if (!input) {
-                    cells[i].innerHTML = '';
-                    input = document.createElement('input');
-                    input.id = 'surveyDisplayChildManualInput';
-                    input.type = 'number';
-                    input.min = '0';
-                    input.max = '999';
-                    input.style.cssText = 'width:72px; padding:4px 6px; border:1px solid #ccc; border-radius:6px; text-align:center; font-size:0.92rem; font-weight:700;';
-                    cells[i].appendChild(input);
-                }
+                cells[i].innerHTML = '';
+                const input = document.createElement('input');
+                input.id = 'surveyDisplayChildManualInput';
+                input.type = 'number';
+                input.min = '0';
+                input.max = '999';
+                input.style.cssText = 'width:72px; padding:4px 6px; border:1px solid #ccc; border-radius:6px; text-align:center; font-size:0.92rem; font-weight:700;';
                 input.value = v > 0 ? v : '';
                 input.oninput = () => {
                     const raw = input.value.trim();
@@ -6068,10 +6065,60 @@
                     }
                     parentingPostSurveyIsDirty = true;
                 };
+                cells[i].appendChild(input);
                 return;
             }
             cells[i].textContent = (services && services[key]) ? services[key] : 0;
         });
+    }
+
+    function saveSurveyDisplayChildManualValue() {
+        const recordId = window.currentSurveyRecordId;
+        if (!recordId) {
+            showToast('找不到當月 RecordId，請先選取左側月份資料', 'error');
+            return;
+        }
+
+        const input = document.getElementById('surveyDisplayChildManualInput');
+        if (!input) return;
+        const saveBtn = document.getElementById('surveyDisplaySaveBtn');
+
+        const raw = input.value.trim();
+        let value = '';
+        if (raw !== '') {
+            const num = parseInt(raw, 10);
+            if (isNaN(num) || num < 0 || num > 999) {
+                showToast('讓子女參加心理團體必須為 0~999', 'error');
+                input.style.borderColor = '#e74c3c';
+                setTimeout(() => { input.style.borderColor = '#ccc'; }, 800);
+                return;
+            }
+            value = num;
+        }
+
+        input.disabled = true;
+        if (saveBtn) saveBtn.disabled = true;
+        google.script.run
+            .withSuccessHandler(res => {
+                input.disabled = false;
+                if (saveBtn) saveBtn.disabled = false;
+                if (res && res.status === 'success') {
+                    showToast(res.message || '已儲存');
+                    parentingPostSurveyIsDirty = false;
+                    onSurveyMonthChanged();
+                } else {
+                    showToast((res && res.message) ? res.message : '儲存失敗', 'error');
+                }
+            })
+            .withFailureHandler(err => {
+                input.disabled = false;
+                if (saveBtn) saveBtn.disabled = false;
+                showToast('儲存失敗: ' + err.message, 'error');
+            })
+            .saveParentingPostSurveyChildManual({
+                recordId: recordId,
+                value: value
+            });
     }
 
     function renderSurveyDisplay(stats, item) {
